@@ -1,4 +1,3 @@
-# miniserver_go
 2 Endpoints: GET, POST
 basic URL "http://localhost:8080/"
 
