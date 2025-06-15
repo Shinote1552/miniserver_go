@@ -5,9 +5,9 @@ import (
 )
 
 var (
-	SetErr    = errors.New("nil visit")
-	GetErr    = errors.New("not found")
-	GetAllErr = errors.New("empty memory ib DB")
+	SetErr = errors.New("nil url")
+	GetErr = errors.New("not found")
+	// GetAllErr = errors.New("empty memory ib DB")
 )
 
 const (
@@ -19,9 +19,9 @@ type urlshortener struct {
 	id  uint64
 }
 
-func newurlshortener(visit string, id uint64) *urlshortener {
+func newurlshortener(url string, id uint64) *urlshortener {
 	return &urlshortener{
-		url: visit,
+		url: url,
 		id:  id,
 	}
 }

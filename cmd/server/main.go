@@ -6,8 +6,10 @@ import (
 )
 
 func main() {
-	storage := inmemory.NewInMemory()
-	srv := server.NewServer(storage, ":8080")
+	baseURL := ":8080"
 
-	srv.Start(":8080")
+	storage := inmemory.NewInMemory()
+	srv := server.NewServer(storage, baseURL)
+
+	srv.Start(baseURL)
 }

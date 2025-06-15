@@ -13,3 +13,19 @@ func NewURLshortener(mem storage.InMemoryStorage, url string) URLshortener {
 		baseURL: url,
 	}
 }
+
+func (s *URLshortener) GetURL(key uint64) (string, error) {
+	url, err := s.storage.Get(key)
+	if err != nil {
+		return "", err
+	}
+	return url, nil
+}
+
+func (s *URLshortener) SetURL(url string) (uint64, error) {
+	key, err := s.storage.Set(url)
+	if err != nil {
+		return 0, err
+	}
+	return key, nil
+}
