@@ -1,6 +1,9 @@
 package service
 
-import "urlshortener/internal/storage"
+import (
+	"strconv"
+	"urlshortener/internal/storage"
+)
 
 type URLshortener struct {
 	storage storage.InMemoryStorage
@@ -14,7 +17,12 @@ func NewURLshortener(mem storage.InMemoryStorage, url string) URLshortener {
 	}
 }
 
-func (s *URLshortener) GetURL(key uint64) (string, error) {
+func (s *URLshortener) GetURL(id string) (string, error) {
+	key, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return "", err
+	}
+
 	url, err := s.storage.Get(key)
 	if err != nil {
 		return "", err
@@ -22,10 +30,12 @@ func (s *URLshortener) GetURL(key uint64) (string, error) {
 	return url, nil
 }
 
-func (s *URLshortener) SetURL(url string) (uint64, error) {
+func (s *URLshortener) SetURL(url string) (string, error) {
 	key, err := s.storage.Set(url)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	return key, nil
+
+	id := strconv.FormatUint(key, 10)
+	return id, nil
 }
