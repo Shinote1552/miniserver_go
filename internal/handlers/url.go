@@ -20,19 +20,17 @@ func NewHandlderURL(service *service.URLshortener) *HandlderURL {
 // GET 307
 func (h *HandlderURL) GetURL(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
-
 	id := strings.TrimPrefix(path, "/")
-
 	url, err := h.service.GetURL(id)
+
 	if url == "" || err != nil {
 		msg := "GetURL Error(): " + err.Error()
 		w.Write([]byte(msg))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	w.Write([]byte(url))
-	w.Write([]byte("\n"))
-	w.Write([]byte("\n--GetURL 307 SUCCESS--\n ID: " + id))
+
+	w.Header().Set("Location", url)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
@@ -48,12 +46,11 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Тело запроса как строка
 	text := string(body)
 	if text == "" {
 		msg := "empty request body"
-		w.Write([]byte(msg))
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(msg))
 		return
 	}
 
@@ -64,10 +61,10 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	msg := "\nhttp://localhost:8080/" + id
-	w.Write([]byte(msg))
-	w.Write([]byte("\n"))
-	w.Write([]byte("\n--SetURL 201--\n"))
+	shortURL := h.service.BaseURL + id
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(shortURL))
 	w.WriteHeader(http.StatusCreated)
 }
 
