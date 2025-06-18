@@ -8,12 +8,14 @@ import (
 )
 
 type HandlderURL struct {
-	service *service.URLshortener
+	service URLshortener
+	BaseURL string
 }
 
-func NewHandlerURL(service *service.URLshortener) *HandlderURL {
+func NewHandlerURL(service *service.URLshortener, url string) *HandlderURL {
 	return &HandlderURL{
 		service: service,
+		BaseURL: url,
 	}
 }
 
@@ -61,7 +63,7 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(msg))
 		return
 	}
-	shortURL := "http://" + h.service.BaseURL + "/" + id
+	shortURL := "http://" + h.BaseURL + "/" + id
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)

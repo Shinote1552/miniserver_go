@@ -19,9 +19,9 @@ func NewServer(mem storage.InMemoryStorage, baseURL string) *Server {
 			storage: &mem,
 			router:  http.NewServeMux(),
 		}
-
+	// Возможно стоит отсюда вынести и передовать в эти обьекты в NewServer
 	urlService := service.NewURLshortener(*s.storage, baseURL)
-	urlHandler := handlers.NewHandlerURL(&urlService)
+	urlHandler := handlers.NewHandlerURL(&urlService, baseURL)
 	s.routerInit(*urlHandler)
 	return s
 }
