@@ -11,7 +11,7 @@ type HandlderURL struct {
 	service *service.URLshortener
 }
 
-func NewHandlderURL(service *service.URLshortener) *HandlderURL {
+func NewHandlerURL(service *service.URLshortener) *HandlderURL {
 	return &HandlderURL{
 		service: service,
 	}
@@ -25,8 +25,8 @@ func (h *HandlderURL) GetURL(w http.ResponseWriter, r *http.Request) {
 
 	if url == "" || err != nil {
 		msg := "GetURL Error(): " + err.Error()
-		w.Write([]byte(msg))
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(msg))
 		return
 	}
 
@@ -40,8 +40,8 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		msg := "io.ReadAll(r.Body) Error(): " + err.Error()
-		w.Write([]byte(msg))
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(msg))
 		return
 	}
 	defer r.Body.Close()
@@ -57,20 +57,20 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 	id, err := h.service.SetURL(text)
 	if err != nil || id == "" {
 		msg := "SetURL Error(): " + err.Error()
-		w.Write([]byte(msg))
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(msg))
 		return
 	}
-	shortURL := h.service.BaseURL + id
+	shortURL := "http://" + h.service.BaseURL + "/" + id
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(shortURL))
 	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte(shortURL))
 }
 
 // DEFAULT PAGE 400
 func (h *HandlderURL) DefaultURL(w http.ResponseWriter, r *http.Request) {
 
-	w.Write([]byte("--DefaultURL 400--"))
 	w.WriteHeader(http.StatusBadRequest)
+	w.Write([]byte("--DefaultURL 400--"))
 }

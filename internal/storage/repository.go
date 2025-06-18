@@ -1,6 +1,6 @@
 package storage
 
 type InMemoryStorage interface {
-	Set(url string) (uint64, error)
-	Get(id uint64) (string, error)
+	Set(url string) (string, error)
+	Get(token string) (string, error)
 }

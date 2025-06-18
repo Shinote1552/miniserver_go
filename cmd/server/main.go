@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	baseURL := ":8080"
+	baseURL := "localhost:8080"
 
 	storage := inmemory.NewInMemory()
 	srv := server.NewServer(storage, baseURL)

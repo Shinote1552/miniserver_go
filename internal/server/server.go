@@ -21,7 +21,7 @@ func NewServer(mem storage.InMemoryStorage, baseURL string) *Server {
 		}
 
 	urlService := service.NewURLshortener(*s.storage, baseURL)
-	urlHandler := handlers.NewHandlderURL(&urlService)
+	urlHandler := handlers.NewHandlerURL(&urlService)
 	s.routerInit(*urlHandler)
 	return s
 }
@@ -34,7 +34,8 @@ func (s *Server) routerInit(h handlers.HandlderURL) {
 }
 
 func (s *Server) Start(addr string) {
-	fmt.Println("Server started on: ", addr)
+	fullURL := "http://" + addr
+	fmt.Println("Server started on:", fullURL)
 	err := http.ListenAndServe(addr, s.router)
 	if err != nil {
 		panic(err)
