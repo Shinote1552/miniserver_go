@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -72,7 +73,9 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 
 // DEFAULT PAGE 400
 func (h *HandlderURL) DefaultURL(w http.ResponseWriter, r *http.Request) {
-
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusBadRequest)
-	w.Write([]byte("--DefaultURL 400--"))
+	response := fmt.Sprintf("Bad Request (400)\nMethod: %s\nPath: %s",
+		r.Method, r.URL.Path)
+	w.Write([]byte(response))
 }

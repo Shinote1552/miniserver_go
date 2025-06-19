@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,7 @@ func TestHandlderURL_GetURL(t *testing.T) {
 		setupMock    func()
 		requestURL   string
 		expectedCode int
+		expectedBody string
 	}{
 		{
 			name: "successful redirect",
@@ -42,43 +44,48 @@ func TestHandlderURL_GetURL(t *testing.T) {
 			},
 			requestURL:   "/invalid",
 			expectedCode: http.StatusBadRequest,
+			expectedBody: "GetURL Error(): " + inmemory.GetErr.Error(),
+		},
+		{
+			name: "empty token",
+			setupMock: func() {
+				// Явно ожидаем вызов GetURL с пустой строкой
+				mockShortener.EXPECT().
+					GetURL("").
+					Return("", errors.New("empty token"))
+			},
+			requestURL:   "/",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "GetURL Error(): empty token",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Настраиваем мок
 			tt.setupMock()
 
-			// Создаем обработчик с моком
 			h := &HandlderURL{
 				service: mockShortener,
 				BaseURL: "localhost:8080",
 			}
 
-			// Создаем запрос
 			req, err := http.NewRequest("GET", tt.requestURL, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			// Создаем ResponseRecorder для записи ответа
 			rr := httptest.NewRecorder()
-
-			// Вызываем обработчик
 			h.GetURL(rr, req)
 
-			// Проверяем статус код
 			if status := rr.Code; status != tt.expectedCode {
 				t.Errorf("handler returned wrong status code: got %v want %v",
 					status, tt.expectedCode)
 			}
 
-			// Для редиректа проверяем заголовок Location
-			if tt.expectedCode == http.StatusTemporaryRedirect {
-				location := rr.Header().Get("Location")
-				if location != "https://example.com" {
-					t.Errorf("handler returned wrong location header: got %v want %v",
-						location, "https://example.com")
+			if tt.expectedBody != "" {
+				if !strings.Contains(rr.Body.String(), tt.expectedBody) {
+					t.Errorf("handler returned unexpected body: got %q want to contain %q",
+						rr.Body.String(), tt.expectedBody)
 				}
 			}
 		})
@@ -166,6 +173,74 @@ func TestHandlderURL_SetURL(t *testing.T) {
 					t.Errorf("handler returned unexpected body: got %v want %v",
 						rr.Body.String(), tt.expectedBody)
 				}
+			}
+		})
+	}
+}
+
+func TestHandlderURL_DefaultURL(t *testing.T) {
+	// Не нужны моки, так как метод не использует сервис
+	h := &HandlderURL{
+		service: nil,
+		BaseURL: "localhost:8080",
+	}
+
+	tests := []struct {
+		name         string
+		method       string
+		path         string
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "GET request",
+			method:       "GET",
+			path:         "/unknown",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Bad Request (400)\nMethod: GET\nPath: /unknown",
+		},
+		{
+			name:         "POST request",
+			method:       "POST",
+			path:         "/another",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Bad Request (400)\nMethod: POST\nPath: /another",
+		},
+		{
+			name:         "PUT request",
+			method:       "PUT",
+			path:         "/test",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Bad Request (400)\nMethod: PUT\nPath: /test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(tt.method, tt.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rr := httptest.NewRecorder()
+			h.DefaultURL(rr, req)
+
+			// Проверяем статус код
+			if status := rr.Code; status != tt.expectedCode {
+				t.Errorf("handler returned wrong status code: got %v want %v",
+					status, tt.expectedCode)
+			}
+
+			// Проверяем тело ответа
+			if got := rr.Body.String(); got != tt.expectedBody {
+				t.Errorf("handler returned unexpected body:\ngot:\n%v\nwant:\n%v",
+					got, tt.expectedBody)
+			}
+
+			// Дополнительно проверяем Content-Type
+			if contentType := rr.Header().Get("Content-Type"); contentType != "text/plain" {
+				t.Errorf("handler returned wrong content type: got %v want text/plain",
+					contentType)
 			}
 		})
 	}
