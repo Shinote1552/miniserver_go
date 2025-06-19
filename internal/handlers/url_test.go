@@ -66,7 +66,7 @@ func TestHandlderURL_GetURL(t *testing.T) {
 
 			h := &HandlderURL{
 				service: mockShortener,
-				BaseURL: "localhost:8080",
+				servurl: "localhost:8080",
 			}
 
 			req, err := http.NewRequest("GET", tt.requestURL, nil)
@@ -146,7 +146,7 @@ func TestHandlderURL_SetURL(t *testing.T) {
 			// Создаем обработчик с моком
 			h := &HandlderURL{
 				service: mockShortener,
-				BaseURL: "localhost:8080",
+				servurl: "localhost:8080",
 			}
 
 			// Создаем запрос с телом
@@ -182,7 +182,7 @@ func TestHandlderURL_DefaultURL(t *testing.T) {
 	// Не нужны моки, так как метод не использует сервис
 	h := &HandlderURL{
 		service: nil,
-		BaseURL: "localhost:8080",
+		servurl: "localhost:8080",
 	}
 
 	tests := []struct {

@@ -10,13 +10,13 @@ import (
 
 type HandlderURL struct {
 	service URLshortener
-	BaseURL string
+	servurl string
 }
 
 func NewHandlerURL(service *service.URLshortener, url string) *HandlderURL {
 	return &HandlderURL{
 		service: service,
-		BaseURL: url,
+		servurl: url,
 	}
 }
 
@@ -64,11 +64,11 @@ func (h *HandlderURL) SetURL(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(msg))
 		return
 	}
-	shortURL := "http://" + h.BaseURL + "/" + id
+	msg := "http://" + h.servurl + "/" + id
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(shortURL))
+	w.Write([]byte(msg))
 }
 
 // DEFAULT PAGE 400

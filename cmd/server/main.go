@@ -1,15 +1,19 @@
 package main
 
 import (
+	"urlshortener/internal/config"
 	"urlshortener/internal/server"
 	"urlshortener/internal/storage/inmemory"
 )
 
 func main() {
-	baseURL := "localhost:8080"
+	addr := "localhost:8080"
+	baseURL := "http://" + addr
 
-	storage := inmemory.NewInMemory()
-	srv := server.NewServer(storage, baseURL)
+	mem := inmemory.NewInMemory()
 
-	srv.Start(baseURL)
+	cfg := config.NewServerConfig(addr, baseURL)
+	srv := server.NewServer(mem, cfg)
+
+	srv.Start()
 }

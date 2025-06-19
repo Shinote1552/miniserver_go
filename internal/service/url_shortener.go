@@ -6,13 +6,11 @@ import (
 
 type URLshortener struct {
 	storage storage.InMemoryStorage
-	BaseURL string
 }
 
-func NewURLshortener(mem storage.InMemoryStorage, url string) URLshortener {
+func NewURLshortener(mem storage.InMemoryStorage) URLshortener {
 	return URLshortener{
 		storage: mem,
-		BaseURL: url,
 	}
 }
 
