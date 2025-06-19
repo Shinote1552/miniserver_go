@@ -6,18 +6,20 @@ import (
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage"
+
+	"github.com/gorilla/mux"
 )
 
 type Server struct {
 	storage *storage.InMemoryStorage
-	router  *http.ServeMux
+	router  *mux.Router
 }
 
 func NewServer(mem storage.InMemoryStorage, baseURL string) *Server {
 	s :=
 		&Server{
 			storage: &mem,
-			router:  http.NewServeMux(),
+			router:  mux.NewRouter(),
 		}
 	// Возможно стоит отсюда вынести и передовать в эти обьекты в NewServer
 	urlService := service.NewURLshortener(*s.storage, baseURL)
@@ -26,10 +28,19 @@ func NewServer(mem storage.InMemoryStorage, baseURL string) *Server {
 	return s
 }
 
+// serveMux
+//
+//	func (s *Server) routerInit(h handlers.HandlderURL) {
+//		s.router.HandleFunc("GET /{id}", h.GetURL) // 307
+//		s.router.HandleFunc("POST /", h.SetURL)    // 201
+//		s.router.HandleFunc("/", h.DefaultURL)     // 400
+//	}
+
+// muxRouter
 func (s *Server) routerInit(h handlers.HandlderURL) {
-	s.router.HandleFunc("GET /{id}", h.GetURL) // 307
-	s.router.HandleFunc("POST /", h.SetURL)    // 201
-	s.router.HandleFunc("/", h.DefaultURL)     // 400
+	s.router.HandleFunc("/{id}", h.GetURL).Methods("GET")
+	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
+	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
 
 }
 
