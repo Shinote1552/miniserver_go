@@ -26,7 +26,7 @@ func NewServer(mem storage.InMemoryStorage, cfg config.ServerConfig) *Server {
 		}
 	// Возможно стоит отсюда вынести и передовать в эти обьекты в NewServer
 	urlService := service.NewURLshortener(*s.storage)
-	urlHandler := handlers.NewHandlerURL(&urlService, cfg.BaseURL)
+	urlHandler := handlers.NewHandlerURL(&urlService, cfg.ServerAddr)
 	s.routerInit(*urlHandler)
 	return s
 }
