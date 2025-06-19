@@ -13,7 +13,7 @@ func main() {
 
 	mem := inmemory.NewInMemory()
 
-	cfg := config.LoadServerConfigCLI()
+	cfg := config.LoadConfig()
 
 	srv := server.NewServer(mem, cfg.ServerAddr)
 
