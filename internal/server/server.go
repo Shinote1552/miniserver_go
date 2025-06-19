@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"urlshortener/internal/config"
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage"
@@ -14,19 +13,19 @@ import (
 type Server struct {
 	storage *storage.InMemoryStorage
 	router  *mux.Router
-	config  *config.ServerConfig
+	addr    string
 }
 
-func NewServer(mem storage.InMemoryStorage, cfg config.ServerConfig) *Server {
+func NewServer(mem storage.InMemoryStorage, addr string) *Server {
 	s :=
 		&Server{
 			storage: &mem,
 			router:  mux.NewRouter(),
-			config:  &cfg,
+			addr:    addr,
 		}
 	// Возможно стоит отсюда вынести и передовать в эти обьекты в NewServer
 	urlService := service.NewURLshortener(*s.storage)
-	urlHandler := handlers.NewHandlerURL(&urlService, cfg.ServerAddr)
+	urlHandler := handlers.NewHandlerURL(&urlService, addr)
 	s.routerInit(*urlHandler)
 	return s
 }
@@ -48,9 +47,9 @@ func (s *Server) routerInit(h handlers.HandlderURL) {
 }
 
 func (s *Server) Start() {
-	fullURL := s.config.BaseURL
+	fullURL := "http://" + s.addr
 	fmt.Println("Server started on:", fullURL)
-	err := http.ListenAndServe(s.config.ServerAddr, s.router)
+	err := http.ListenAndServe(s.addr, s.router)
 	if err != nil {
 		panic(err)
 	}

@@ -7,13 +7,15 @@ import (
 )
 
 func main() {
-	addr := "localhost:8080"
-	baseURL := "http://" + addr
+	// addr := "localhost:8080"
+	// baseURL := "http://" + addr
+	// cfg := config.NewServerConfig(addr, baseURL)
 
 	mem := inmemory.NewInMemory()
 
-	cfg := config.NewServerConfig(addr, baseURL)
-	srv := server.NewServer(mem, cfg)
+	cfg := config.LoadServerConfigCLI()
+
+	srv := server.NewServer(mem, cfg.ServerAddr)
 
 	srv.Start()
 }
