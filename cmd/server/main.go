@@ -4,6 +4,7 @@ import (
 	"urlshortener/internal/config"
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/logger"
+	"urlshortener/internal/middleware"
 	"urlshortener/internal/server"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage/inmemory"
@@ -20,8 +21,9 @@ func main() {
 	urlHandler := handlers.NewHandlerURL(&urlService, cfg.ServerAddr)
 
 	mylog := logger.GetLogger()
+	loggingMiddleware := middleware.NewLoggingMiddleware(mylog)
 
-	srv := server.NewServer(cfg.ServerAddr, mylog, urlHandler)
+	srv := server.NewServer(cfg.ServerAddr, mylog, loggingMiddleware, urlHandler)
 
 	srv.Start()
 }
