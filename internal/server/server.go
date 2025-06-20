@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/service"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
@@ -51,7 +51,10 @@ func (s *Server) routerInit(h handlers.HandlderURL) {
 
 func (s *Server) logerInit() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Print("hello world")
+	// mylog := log.New(os.Stdout, "miniserv", log.Ltime|log.Ldate|log.LstdFlags)
+	// mylog.Print("hello world")
+	log.Info().Msg("asdasdasd")
+
 }
 
 func (s *Server) Start() {
