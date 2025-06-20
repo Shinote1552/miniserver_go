@@ -1,14 +1,12 @@
 package service
 
-import (
-	"urlshortener/internal/storage"
-)
+import "urlshortener/internal/deps"
 
 type URLshortener struct {
-	storage storage.InMemoryStorage
+	storage deps.InMemoryStorage
 }
 
-func NewURLshortener(mem storage.InMemoryStorage) URLshortener {
+func NewURLshortener(mem deps.InMemoryStorage) URLshortener {
 	return URLshortener{
 		storage: mem,
 	}

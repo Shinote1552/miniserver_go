@@ -6,7 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"urlshortener/internal/handlers/mocks"
+
+	"urlshortener/internal/deps/mocks"
 	"urlshortener/internal/storage/inmemory"
 
 	"go.uber.org/mock/gomock"

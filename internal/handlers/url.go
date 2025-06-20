@@ -5,11 +5,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"urlshortener/internal/deps"
 	"urlshortener/internal/service"
 )
 
 type HandlderURL struct {
-	service URLshortener
+	service deps.URLshortener
 	servurl string
 }
 

@@ -1,35 +1,26 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
-	"urlshortener/internal/handlers"
-	"urlshortener/internal/service"
-	"urlshortener/internal/storage"
+	"urlshortener/internal/deps"
 
 	"github.com/gorilla/mux"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 type Server struct {
-	storage *storage.InMemoryStorage
-	router  *mux.Router
-	addr    string
+	router *mux.Router
+	addr   string
+	log    deps.Logger
 }
 
-func NewServer(mem storage.InMemoryStorage, addr string) *Server {
+func NewServer(addr string, mylog deps.Logger, service deps.Handler) *Server {
 	s :=
 		&Server{
-			storage: &mem,
-			router:  mux.NewRouter(),
-			addr:    addr,
+			router: mux.NewRouter(),
+			addr:   addr,
+			log:    mylog,
 		}
-	// Возможно стоит отсюда вынести и передовать в эти обьекты в NewServer
-	urlService := service.NewURLshortener(*s.storage)
-	urlHandler := handlers.NewHandlerURL(&urlService, addr)
-	s.routerInit(*urlHandler)
-	s.logerInit()
+	s.routerInit(service)
 	return s
 }
 
@@ -42,24 +33,18 @@ func NewServer(mem storage.InMemoryStorage, addr string) *Server {
 //	}
 
 // muxRouter
-func (s *Server) routerInit(h handlers.HandlderURL) {
+func (s *Server) routerInit(h deps.Handler) {
 	s.router.HandleFunc("/{id}", h.GetURL).Methods("GET") // 307
 	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
 	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
 
 }
 
-func (s *Server) logerInit() {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	// mylog := log.New(os.Stdout, "miniserv", log.Ltime|log.Ldate|log.LstdFlags)
-	// mylog.Print("hello world")
-	log.Info().Msg("asdasdasd")
-
-}
-
 func (s *Server) Start() {
 	fullURL := "http://" + s.addr
-	fmt.Println("Server started on:", fullURL)
+	s.log.Info().Str("address", fullURL).Msg("Starting server")
+
+	// fmt.Println("Server started on:", fullURL)
 	err := http.ListenAndServe(s.addr, s.router)
 	if err != nil {
 		panic(err)
