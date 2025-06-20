@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"urlshortener/internal/handlers"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/zerolog"
 )
 
 type Server struct {
@@ -27,6 +29,7 @@ func NewServer(mem storage.InMemoryStorage, addr string) *Server {
 	urlService := service.NewURLshortener(*s.storage)
 	urlHandler := handlers.NewHandlerURL(&urlService, addr)
 	s.routerInit(*urlHandler)
+	s.logerInit()
 	return s
 }
 
@@ -44,6 +47,11 @@ func (s *Server) routerInit(h handlers.HandlderURL) {
 	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
 	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
 
+}
+
+func (s *Server) logerInit() {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Print("hello world")
 }
 
 func (s *Server) Start() {
