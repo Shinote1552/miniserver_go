@@ -27,3 +27,7 @@ type Handler interface {
 	SetURL(w http.ResponseWriter, r *http.Request)
 	DefaultURL(w http.ResponseWriter, r *http.Request)
 }
+
+type Middleware interface {
+	Handler(next http.Handler) http.Handler
+}
