@@ -30,7 +30,10 @@ func (s *Server) routerInit(h deps.Handler, mw deps.Middleware) {
 	// Применяем middleware к основному роутеру
 	s.router.Use(mw.Handler)
 
+	s.router.HandleFunc("/api/shorten", h.SetURLwithJSON).Methods("POST") // 201
+
 	s.router.HandleFunc("/{id}", h.GetURL).Methods("GET") // 307
+
 	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
 	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
 

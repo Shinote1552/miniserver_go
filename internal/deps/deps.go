@@ -23,6 +23,7 @@ type URLshortener interface {
 }
 
 type Handler interface {
+	SetURLwithJSON(w http.ResponseWriter, r *http.Request)
 	GetURL(w http.ResponseWriter, r *http.Request)
 	SetURL(w http.ResponseWriter, r *http.Request)
 	DefaultURL(w http.ResponseWriter, r *http.Request)
