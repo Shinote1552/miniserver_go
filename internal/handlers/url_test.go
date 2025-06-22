@@ -13,6 +13,130 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestHandlerURL_SetURLwithJSON(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockShortener := mocks.NewMockURLshortener(ctrl)
+
+	tests := []struct {
+		name         string
+		setupMock    func()
+		requestBody  string
+		method       string
+		contentType  string
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name: "successful URL shortening",
+			setupMock: func() {
+				mockShortener.EXPECT().
+					SetURL("https://example.com").
+					Return("abc123", nil)
+			},
+			requestBody:  `{"url":"https://example.com"}`,
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"result":"http://localhost:8080/abc123"}`,
+		},
+		{
+			name:         "empty JSON body",
+			setupMock:    func() {},
+			requestBody:  "",
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: `{"error":"invalid request body: EOF"}`,
+		},
+		{
+			name:         "invalid JSON format",
+			setupMock:    func() {},
+			requestBody:  `{"url":`,
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: `{"error":"invalid request body: unexpected EOF"}`,
+		},
+		{
+			name:         "missing URL field",
+			setupMock:    func() {},
+			requestBody:  `{"invalid":"field"}`,
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: `{"error":"url is required"}`,
+		},
+		{
+			name:         "empty URL",
+			setupMock:    func() {},
+			requestBody:  `{"url":""}`,
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: `{"error":"url is required"}`,
+		},
+		{
+			name: "service error",
+			setupMock: func() {
+				mockShortener.EXPECT().
+					SetURL("https://error.com").
+					Return("", errors.New("service error"))
+			},
+			requestBody:  `{"url":"https://error.com"}`,
+			method:       http.MethodPost,
+			contentType:  "application/json",
+			expectedCode: http.StatusInternalServerError,
+			expectedBody: `{"error":"failed to shorten URL: service error"}`,
+		},
+		{
+			name:         "wrong HTTP method",
+			setupMock:    func() {},
+			requestBody:  `{"url":"https://example.com"}`,
+			method:       http.MethodGet,
+			contentType:  "application/json",
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: `{"error":"method not allowed"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupMock()
+
+			h := &HandlerURL{
+				service: mockShortener,
+				baseURL: "localhost:8080",
+			}
+
+			req, err := http.NewRequest(tt.method, "/api/shorten", strings.NewReader(tt.requestBody))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", tt.contentType)
+
+			rr := httptest.NewRecorder()
+			h.SetURLwithJSON(rr, req)
+
+			if status := rr.Code; status != tt.expectedCode {
+				t.Errorf("handler returned wrong status code: got %v want %v",
+					status, tt.expectedCode)
+			}
+
+			if tt.expectedBody != "" {
+				// Сравниваем как строки, так как нам важно точное соответствие
+				got := strings.TrimSpace(rr.Body.String())
+				want := strings.TrimSpace(tt.expectedBody)
+				if got != want {
+					t.Errorf("handler returned unexpected body:\ngot  %v\nwant %v",
+						got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestHandlderURL_GetURL(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
