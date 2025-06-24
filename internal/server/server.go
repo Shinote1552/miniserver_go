@@ -8,34 +8,42 @@ import (
 )
 
 type Server struct {
-	addr   string
-	router *mux.Router
-	log    deps.Logger
+	addr     string
+	router   *mux.Router
+	log      deps.Logger
+	handlers Handlers
 }
 
-func NewServer(addr string, mylog deps.Logger, middlware deps.Middleware, service deps.Handler) *Server {
+type Handlers struct {
+	GetHandler      http.Handler
+	PostTextHandler http.Handler
+	PostJSONHandler http.Handler
+	DefaultHandler  http.Handler
+}
+
+func NewServer(addr string, mylog deps.Logger, middlware deps.Middleware, handlers Handlers) *Server {
 	s :=
 		&Server{
-			addr:   addr,
-			router: mux.NewRouter(),
-			log:    mylog,
+			addr:     addr,
+			router:   mux.NewRouter(),
+			log:      mylog,
+			handlers: handlers,
 		}
-	s.routerInit(service, middlware)
+	s.routerInit(middlware, handlers)
 	return s
 }
 
 // muxRouter
-func (s *Server) routerInit(h deps.Handler, mw deps.Middleware) {
+func (s *Server) routerInit(mw deps.Middleware, handlers Handlers) {
 
 	// Применяем middleware к основному роутеру
 	s.router.Use(mw.Handler)
 
-	s.router.HandleFunc("/api/shorten", h.SetURLwithJSON).Methods("POST") // 201
+	s.router.HandleFunc("/api/shorten", handlers.PostJSONHandler.ServeHTTP).Methods("POST") // 201
+	s.router.HandleFunc("/{id}", handlers.GetHandler.ServeHTTP).Methods("GET")              // 307
+	s.router.HandleFunc("/", handlers.PostTextHandler.ServeHTTP).Methods("POST")            // 201
+	s.router.HandleFunc("/", handlers.DefaultHandler.ServeHTTP).Methods("GET")              // 400
 
-	s.router.HandleFunc("/{id}", h.GetURL).Methods("GET") // 307
-
-	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
-	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
 }
 
 func (s *Server) Start() {
@@ -48,3 +56,9 @@ func (s *Server) Start() {
 		panic(err)
 	}
 }
+
+/*
+
+фвыфвыфвыыфывфвцвцй
+
+*/

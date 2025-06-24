@@ -1,21 +1,13 @@
 package inmemory
 
 import (
-	"crypto/rand"
 	"errors"
-	"math/big"
-)
-
-const (
-	tokenGeneratorLength   = 8                                                                // fixme: можешь ближе к методу расположить
-	lettersToGenerateToken = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" // fixme: сохрани иерархию
 )
 
 var (
-	SetErr           = errors.New("nil url") // нейминг странный
+	SetErr           = errors.New("key or value is not valid")
+	GetErr           = errors.New("value is not exist")
 	GenerateTokenErr = errors.New("failed to generate new token")
-	GetErr           = errors.New("not found") // fixme: посмотри различие неймингу между 4xx и 5xx
-	// GetAllErr = errors.New("empty memory ib DB")
 )
 
 const (
@@ -36,49 +28,22 @@ func newurlshortener(url, token string, id uint64) *urlshortener {
 	}
 }
 
-type InMemory struct {
+type InMemoryStorage struct {
 	mem     map[string]urlshortener
 	lastKey string
 }
 
-func NewInMemory() *InMemory { // // fixme: storage ?
-	return &InMemory{
+func NewInMemoryStorage() *InMemoryStorage {
+	return &InMemoryStorage{
 		mem:     make(map[string]urlshortener),
 		lastKey: "",
 	}
 }
 
-func (i *InMemory) generateToken() string {
-	token := make([]byte, 0, tokenGeneratorLength)
-	initRandRange := big.NewInt(int64(len(lettersToGenerateToken)))
-	for i := 0; i < tokenGeneratorLength; i++ {
-		num, err := rand.Int(rand.Reader, initRandRange)
-		if err != nil {
-			return ""
-		}
+func (i *InMemoryStorage) Set(key string, value string) error {
 
-		index := num.Int64()
-		symbol := lettersToGenerateToken[index]
-		token = append(token, symbol)
-	}
-
-	return string(token)
-}
-
-func (i *InMemory) Set(url string) (string, error) { // fixme: Сущеостей будет больше, Назоави более явно: SetURL, к примеру
-
-	if url == "" {
-		return "", SetErr
-	}
-
-	if i.mem[i.lastKey].url == url {
-		return i.mem[i.lastKey].token, nil
-	}
-
-	for _, object := range i.mem {
-		if object.url == url {
-			return object.token, nil
-		}
+	if value == "" || key == "" {
+		return SetErr
 	}
 
 	var id uint64
@@ -89,18 +54,14 @@ func (i *InMemory) Set(url string) (string, error) { // fixme: Сущеосте�
 		id = initLastID
 	}
 
-	token := i.generateToken()
-	if token == "" {
-		return "", GenerateTokenErr
-	}
 	id++
-	i.lastKey = token
-	us := newurlshortener(url, token, id)
-	i.mem[token] = *us
-	return token, nil
+	i.lastKey = key
+	us := newurlshortener(value, key, id)
+	i.mem[key] = *us
+	return nil
 }
 
-func (i *InMemory) Get(token string) (string, error) { // fixme: GetToken
+func (i *InMemoryStorage) Get(token string) (string, error) {
 	us, exists := i.mem[token]
 	if !exists {
 		return "", GetErr
@@ -110,15 +71,22 @@ func (i *InMemory) Get(token string) (string, error) { // fixme: GetToken
 	return url, nil
 }
 
-// func (i *InMemory) GetAll() ([]string, error) {
-// 	if len(i.mem) == 0 {
-// 		return nil, GetAllErr
-// 	}
-// 	allByName := make([]string, 0, len(i.mem))
+func (i *InMemoryStorage) GetAll() ([]string, error) {
+	if len(i.mem) == 0 {
+		return nil, errors.New("storage si empty")
+	}
 
-// 	for _, db := range i.mem {
-// 		allByName = append(allByName, db)
-// 	}
+	urls := make([]string, 0, len(i.mem))
+	for _, v := range i.mem {
+		if v.url == "" {
+			continue
+		}
+		urls = append(urls, v.url)
+	}
 
-// 	return allByName, nil
-// }
+	if len(urls) == 0 {
+		return nil, errors.New("all stored URLs are empty")
+	}
+
+	return urls, nil
+}
