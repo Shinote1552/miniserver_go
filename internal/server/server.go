@@ -36,7 +36,7 @@ func NewServer(addr string, mylog deps.Logger, middlware deps.Middleware, handle
 // muxRouter
 func (s *Server) routerInit(mw deps.Middleware, handlers Handlers) {
 
-	// Применяем middleware к основному роутеру
+	// добавляем middleware(deps.Middleware) к роутеру
 	s.router.Use(mw.Handler)
 
 	s.router.HandleFunc("/api/shorten", handlers.PostJSONHandler.ServeHTTP).Methods("POST") // 201

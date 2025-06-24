@@ -24,7 +24,6 @@ type ServerConfig struct {
 func LoadConfig() ServerConfig {
 	var cfg ServerConfig
 
-	// Читаем переменные окружения
 	envAddr := os.Getenv(EnvListenPort)
 	envBaseURL := os.Getenv(EnvBaseURL)
 
