@@ -35,8 +35,6 @@ func main() {
 
 	service := service.NewURLShortenerService(storage)
 
-	// urlHandler := handlers.NewHandlerURL(&urlService, cfg.ListenPort)
-
 	mylog := logger.GetLogger()
 	loggingMiddleware := middleware.NewLoggingMiddleware(mylog)
 

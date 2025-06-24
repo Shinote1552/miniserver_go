@@ -56,9 +56,3 @@ func (s *Server) Start() {
 		panic(err)
 	}
 }
-
-/*
-
-фвыфвыфвыыфывфвцвцй
-
-*/

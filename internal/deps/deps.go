@@ -9,6 +9,7 @@ import (
 )
 
 type Logger interface {
+	// logging Layers
 	Info() *zerolog.Event
 	Error() *zerolog.Event
 }

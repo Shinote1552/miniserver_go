@@ -6,22 +6,27 @@ import (
 	"strings"
 )
 
-type ServerConfig struct {
-	ListenPort string
-	BaseURL    string
-}
+const (
+	EnvListenPort = "SERVER_ADDRESS"
+	EnvBaseURL    = "BASE_URL"
+)
 
 const (
 	defaultListenPort string = "localhost:8080"
 	defaultBaseURL    string = "http://localhost:8080"
 )
 
+type ServerConfig struct {
+	ListenPort string
+	BaseURL    string
+}
+
 func LoadConfig() ServerConfig {
 	var cfg ServerConfig
 
 	// Читаем переменные окружения
-	envAddr := os.Getenv("SERVER_ADDRESS") // fixme: в константы
-	envBaseURL := os.Getenv("BASE_URL")    // fixme: в костаны
+	envAddr := os.Getenv(EnvListenPort)
+	envBaseURL := os.Getenv(EnvBaseURL)
 
 	// Парсим флаги командной строки
 	flag.StringVar(&cfg.ListenPort, "a", defaultListenPort, "HTTP server address")
