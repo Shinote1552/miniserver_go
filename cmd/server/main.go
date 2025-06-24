@@ -2,7 +2,7 @@ package main
 
 import (
 	"urlshortener/internal/config"
-	defaulthandler "urlshortener/internal/handlers/default"
+	"urlshortener/internal/handlers/defaulthandler"
 	"urlshortener/internal/handlers/geturl"
 	"urlshortener/internal/handlers/seturljson"
 	"urlshortener/internal/handlers/seturltext"
