@@ -7,14 +7,14 @@ import (
 )
 
 const (
-	tokenGeneratorLength   = 8
-	lettersToGenerateToken = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	tokenGeneratorLength   = 8                                                                // fixme: можешь ближе к методу расположить
+	lettersToGenerateToken = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" // fixme: сохрани иерархию
 )
 
 var (
-	SetErr           = errors.New("nil url")
+	SetErr           = errors.New("nil url") // нейминг странный
 	GenerateTokenErr = errors.New("failed to generate new token")
-	GetErr           = errors.New("not found")
+	GetErr           = errors.New("not found") // fixme: посмотри различие неймингу между 4xx и 5xx
 	// GetAllErr = errors.New("empty memory ib DB")
 )
 
@@ -41,7 +41,7 @@ type InMemory struct {
 	lastKey string
 }
 
-func NewInMemory() *InMemory {
+func NewInMemory() *InMemory { // // fixme: storage ?
 	return &InMemory{
 		mem:     make(map[string]urlshortener),
 		lastKey: "",
@@ -65,7 +65,7 @@ func (i *InMemory) generateToken() string {
 	return string(token)
 }
 
-func (i *InMemory) Set(url string) (string, error) {
+func (i *InMemory) Set(url string) (string, error) { // fixme: Сущеостей будет больше, Назоави более явно: SetURL, к примеру
 
 	if url == "" {
 		return "", SetErr
@@ -100,7 +100,7 @@ func (i *InMemory) Set(url string) (string, error) {
 	return token, nil
 }
 
-func (i *InMemory) Get(token string) (string, error) {
+func (i *InMemory) Get(token string) (string, error) { // fixme: GetToken
 	us, exists := i.mem[token]
 	if !exists {
 		return "", GetErr

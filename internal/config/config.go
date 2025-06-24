@@ -1,4 +1,6 @@
-package config
+// Самостоятельный пакет?
+
+package config // 1. Сначала пакет
 
 import (
 	"flag"
@@ -7,8 +9,8 @@ import (
 	"strings"
 )
 
-type ServerConfig struct {
-	ServerAddr string
+type ServerConfig struct { // 2. Название
+	ServerAddr string // TODO: Addr
 	BaseURL    string
 }
 
@@ -21,8 +23,8 @@ func LoadConfig() ServerConfig {
 	var cfg ServerConfig
 
 	// Читаем переменные окружения
-	envAddr := os.Getenv("SERVER_ADDRESS")
-	envBaseURL := os.Getenv("BASE_URL")
+	envAddr := os.Getenv("SERVER_ADDRESS") // fixme: в константы
+	envBaseURL := os.Getenv("BASE_URL")    // fixme: в костаны
 
 	fmt.Println("SERVER_ADDRESS=", envAddr)
 	fmt.Println("BASE_URL=", envBaseURL)
@@ -39,7 +41,7 @@ func LoadConfig() ServerConfig {
 	if envBaseURL != "" {
 		cfg.BaseURL = envBaseURL
 	}
-
+	
 	// Автоматически добавляем localhost если указан только порт
 	if strings.HasPrefix(cfg.ServerAddr, ":") {
 		cfg.ServerAddr = "localhost" + cfg.ServerAddr

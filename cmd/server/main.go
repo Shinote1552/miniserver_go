@@ -14,7 +14,8 @@ func main() {
 	// addr := "localhost:8080"
 	// baseURL := "http://" + addr
 	// cfg := config.NewServerConfig(addr, baseURL)
-	cfg := config.LoadConfig()
+	cfg := config.LoadConfig() // Для чего?
+	// AI: описать что это и какие есть юзкейсы
 
 	mem := inmemory.NewInMemory()
 	urlService := service.NewURLshortener(mem)

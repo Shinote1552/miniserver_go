@@ -36,7 +36,6 @@ func (s *Server) routerInit(h deps.Handler, mw deps.Middleware) {
 
 	s.router.HandleFunc("/", h.SetURL).Methods("POST")    // 201
 	s.router.HandleFunc("/", h.DefaultURL).Methods("GET") // 400
-
 }
 
 func (s *Server) Start() {

@@ -1,3 +1,5 @@
+// fixme: здесь должны быть внешние зависимости относительно всего приложение
+
 package deps
 
 import (
@@ -17,13 +19,15 @@ type InMemoryStorage interface {
 }
 
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps URLshortener
-type URLshortener interface {
-	GetURL(token string) (string, error)
+type URLshortener interface { // fixme: 2 слово с большой буквы
+	// fixme: Необязательно, но я бы добавил, что это сервис
+	// fixme: Либо Вообще переименовал URLshortener -> Service
+	GetURL(token string) (string, error) // fixme: best pactice: Заранне определи нотацию в которой будешь именовать CRUD'ы: get/fetch, update/set, delete/destroy
 	SetURL(url string) (string, error)
 }
 
 type Handler interface {
-	SetURLwithJSON(w http.ResponseWriter, r *http.Request)
+	SetURLwithJSON(w http.ResponseWriter, r *http.Request) // fixme: Отра
 	GetURL(w http.ResponseWriter, r *http.Request)
 	SetURL(w http.ResponseWriter, r *http.Request)
 	DefaultURL(w http.ResponseWriter, r *http.Request)

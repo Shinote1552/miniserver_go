@@ -1,4 +1,4 @@
-package handlers
+package handlers // fixme: best pactice: на каждый handler свой пакет
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	contentTypeJSON  = "application/json"
+	contentTypeJSON  = "application/json" // fixme: best pactice: отдельный пакет httputils
 	contentTypePlain = "text/plain"
 )
 
@@ -39,7 +39,7 @@ func NewHandlerURL(service *service.URLshortener, baseURL string) *HandlerURL {
 	}
 }
 
-// writeErrorTP выводит ошибку в формате text/plain (TP = Text Plain)
+// writeErrorTP выводит ошибку в формате text/plain (TP = Text Plain) fixme: ну уж сделйа TextPlain
 func (h *HandlerURL) writeErrorTP(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", contentTypePlain)
 	w.WriteHeader(status)
@@ -59,11 +59,6 @@ func (h *HandlerURL) buildShortURL(id string) string {
 
 // GET 307
 func (h *HandlerURL) GetURL(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		h.writeErrorTP(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	url, err := h.service.GetURL(id)
 	if err != nil {
@@ -77,11 +72,6 @@ func (h *HandlerURL) GetURL(w http.ResponseWriter, r *http.Request) {
 
 // POST 201
 func (h *HandlerURL) SetURL(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		h.writeErrorTP(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.writeErrorTP(w, http.StatusBadRequest, "SetURL Error(): "+err.Error())

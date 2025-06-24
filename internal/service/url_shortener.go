@@ -13,7 +13,6 @@ func NewURLshortener(mem deps.InMemoryStorage) URLshortener {
 }
 
 func (s *URLshortener) GetURL(token string) (string, error) {
-
 	url, err := s.storage.Get(token)
 	if err != nil {
 		return "", err

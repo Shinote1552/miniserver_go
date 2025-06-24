@@ -13,6 +13,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+//type testEnv struct {
+//	mock...
+//	ctrl...
+//  HandlerURL
+//}
+
 func TestHandlerURL_SetURLwithJSON(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -23,7 +29,7 @@ func TestHandlerURL_SetURLwithJSON(t *testing.T) {
 		name         string
 		setupMock    func()
 		requestBody  string
-		method       string
+		method       string // fixme: один и тот же, не меняется
 		contentType  string
 		expectedCode int
 		expectedBody string
@@ -264,6 +270,8 @@ func TestHandlderURL_SetURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+
+			// {
 			// Настраиваем мок
 			tt.setupMock()
 
@@ -273,6 +281,8 @@ func TestHandlderURL_SetURL(t *testing.T) {
 				service: mockShortener,
 				baseURL: "localhost:8080",
 			}
+
+			// } => testEnv
 
 			// Создаем запрос с телом
 			req, err := http.NewRequest("POST", "/", strings.NewReader(tt.requestBody))
