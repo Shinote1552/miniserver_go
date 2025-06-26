@@ -2,7 +2,7 @@ package main
 
 import (
 	"urlshortener/internal/config"
-	"urlshortener/internal/handlers/defaulthandler"
+	"urlshortener/internal/handlers/getdefault"
 	"urlshortener/internal/handlers/geturl"
 	"urlshortener/internal/handlers/seturljson"
 	"urlshortener/internal/handlers/seturltext"
@@ -39,7 +39,7 @@ func main() {
 	loggingMiddleware := middleware.NewLoggingMiddleware(mylog)
 
 	handlers := server.Handlers{
-		GetDefaultHandler: defaulthandler.New(),
+		GetDefaultHandler: getdefault.New(),
 		GetWithIdHandler:  geturl.New(service),
 		PostTextHandler:   seturltext.New(service, cfg.BaseURL),
 		PostJSONHandler:   seturljson.New(service, cfg.BaseURL),

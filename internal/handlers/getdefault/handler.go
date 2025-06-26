@@ -1,4 +1,4 @@
-package defaulthandler
+package getdefault
 
 import (
 	"fmt"
