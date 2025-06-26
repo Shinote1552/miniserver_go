@@ -7,17 +7,17 @@ import (
 	"urlshortener/internal/httputils"
 )
 
-type GetURLHandler struct {
+type GetURLWithIDHandler struct {
 	service deps.ServiceURLShortener
 }
 
-func New(service deps.ServiceURLShortener) *GetURLHandler {
-	return &GetURLHandler{
+func New(service deps.ServiceURLShortener) *GetURLWithIDHandler {
+	return &GetURLWithIDHandler{
 		service: service,
 	}
 }
 
-func (h *GetURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *GetURLWithIDHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	url, err := h.service.GetURL(id)
 	if err != nil {

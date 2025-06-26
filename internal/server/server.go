@@ -14,11 +14,12 @@ type Server struct {
 	handlers Handlers
 }
 
+// все типы которые реализовывают ендпоинты
 type Handlers struct {
-	GetHandler      http.Handler
-	PostTextHandler http.Handler
-	PostJSONHandler http.Handler
-	DefaultHandler  http.Handler
+	GetDefaultHandler http.Handler
+	GetWithIdHandler  http.Handler
+	PostTextHandler   http.Handler
+	PostJSONHandler   http.Handler
 }
 
 func NewServer(addr string, mylog deps.Logger, middlware deps.Middleware, handlers Handlers) *Server {
@@ -39,10 +40,10 @@ func (s *Server) routerInit(mw deps.Middleware, handlers Handlers) {
 	// добавляем middleware(deps.Middleware) к роутеру
 	s.router.Use(mw.Handler)
 
-	s.router.HandleFunc("/api/shorten", handlers.PostJSONHandler.ServeHTTP).Methods("POST") // 201
-	s.router.HandleFunc("/{id}", handlers.GetHandler.ServeHTTP).Methods("GET")              // 307
+	s.router.HandleFunc("/", handlers.GetDefaultHandler.ServeHTTP).Methods("GET")           // 400
+	s.router.HandleFunc("/{id}", handlers.GetWithIdHandler.ServeHTTP).Methods("GET")        // 307
 	s.router.HandleFunc("/", handlers.PostTextHandler.ServeHTTP).Methods("POST")            // 201
-	s.router.HandleFunc("/", handlers.DefaultHandler.ServeHTTP).Methods("GET")              // 400
+	s.router.HandleFunc("/api/shorten", handlers.PostJSONHandler.ServeHTTP).Methods("POST") // 201
 
 }
 

@@ -39,10 +39,10 @@ func main() {
 	loggingMiddleware := middleware.NewLoggingMiddleware(mylog)
 
 	handlers := server.Handlers{
-		GetHandler:      geturl.New(service),
-		PostTextHandler: seturltext.New(service, cfg.BaseURL),
-		PostJSONHandler: seturljson.New(service, cfg.BaseURL),
-		DefaultHandler:  defaulthandler.New(),
+		GetDefaultHandler: defaulthandler.New(),
+		GetWithIdHandler:  geturl.New(service),
+		PostTextHandler:   seturltext.New(service, cfg.BaseURL),
+		PostJSONHandler:   seturljson.New(service, cfg.BaseURL),
 	}
 
 	srv := server.NewServer(cfg.ListenPort, mylog, loggingMiddleware, handlers)
