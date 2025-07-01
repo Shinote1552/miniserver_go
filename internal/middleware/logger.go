@@ -3,38 +3,32 @@ package middleware
 import (
 	"net/http"
 	"time"
-	"urlshortener/internal/deps"
+	"urlshortener/internal/httputils"
+
+	"github.com/rs/zerolog"
 )
 
-// LoggingMiddleware реализует Middleware интерфейс для логирования
-type LoggingMiddleware struct {
-	log deps.Logger
-}
+// LoggingMiddleware создает middleware для логирования HTTP запросов
+func LoggingMiddleware(log zerolog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			recorder := httputils.NewResponseRecorder(w)
 
-// NewLoggingMiddleware создает новое middleware для логирования
-func NewLoggingMiddleware(log deps.Logger) *LoggingMiddleware {
-	return &LoggingMiddleware{log: log}
-}
+			log.Info().
+				Str("method", r.Method).
+				Str("uri", r.RequestURI).
+				Msg("request started")
 
-// Handler реализует Middleware интерфейс
-func (m *LoggingMiddleware) Handler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		recorder := NewResponseRecorder(w)
+			next.ServeHTTP(recorder, r)
 
-		m.log.Info().
-			Str("method", r.Method).
-			Str("uri", r.RequestURI).
-			Msg("request started")
-
-		next.ServeHTTP(recorder, r)
-
-		m.log.Info().
-			Str("method", r.Method).
-			Str("uri", r.RequestURI).
-			Int("status", recorder.StatusCode).
-			Int("size", recorder.Size).
-			Dur("duration", time.Since(start)).
-			Msg("request completed")
-	})
+			log.Info().
+				Str("method", r.Method).
+				Str("uri", r.RequestURI).
+				Int("status", recorder.StatusCode).
+				Int("size", recorder.Size).
+				Dur("duration", time.Since(start)).
+				Msg("request completed")
+		})
+	}
 }

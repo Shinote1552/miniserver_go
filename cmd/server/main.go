@@ -2,25 +2,18 @@ package main
 
 import (
 	"urlshortener/internal/config"
-	"urlshortener/internal/handlers/getdefault"
-	"urlshortener/internal/handlers/geturl"
-	"urlshortener/internal/handlers/seturljson"
-	"urlshortener/internal/handlers/seturltext"
 	"urlshortener/internal/logger"
-	"urlshortener/internal/middleware"
 	"urlshortener/internal/server"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage/inmemory"
 )
 
 func main() {
-	cfg := config.LoadConfig()
 	// Config может содержать:
 	// - ListenPort (порт сервера, например "localhost:8080")
 	// - BaseURL (базовый URL для коротких ссылок, например "http://localhost:8080")
 
 	/*
-
 		// можно будет еще добавить:
 
 		// - LogLevel (уровень логирования)
@@ -29,23 +22,21 @@ func main() {
 
 	*/
 
-	// Создание хэндлеров
+	cfg := config.LoadConfig()
 
 	storage := inmemory.NewInMemoryStorage()
+	svc := service.NewURLShortenerService(storage)
+	logger := logger.GetLogger()
 
-	service := service.NewURLShortenerService(storage)
+	srv, err := server.NewServer(
+		cfg,
+		logger,
+		svc,
+	)
 
-	mylog := logger.GetLogger()
-	loggingMiddleware := middleware.NewLoggingMiddleware(mylog)
-
-	handlers := server.Handlers{
-		GetDefaultHandler: getdefault.New(),
-		GetWithIdHandler:  geturl.New(service),
-		PostTextHandler:   seturltext.New(service, cfg.BaseURL),
-		PostJSONHandler:   seturljson.New(service, cfg.BaseURL),
+	if err != nil {
+		logger.Fatal().Err(err)
 	}
-
-	srv := server.NewServer(cfg.ListenPort, mylog, loggingMiddleware, handlers)
 
 	srv.Start()
 }

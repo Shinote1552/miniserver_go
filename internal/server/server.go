@@ -1,59 +1,83 @@
 package server
 
 import (
+	"errors"
 	"net/http"
-	"urlshortener/internal/deps"
+	"urlshortener/internal/config"
+	"urlshortener/internal/handlers/getdefault"
+	"urlshortener/internal/handlers/geturl"
+	"urlshortener/internal/handlers/seturljson"
+	"urlshortener/internal/handlers/seturltext"
+	"urlshortener/internal/middleware"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/zerolog"
 )
 
 type Server struct {
-	addr     string
-	router   *mux.Router
-	log      deps.Logger
-	handlers Handlers
+	cfg    *config.ServerConfig
+	router *mux.Router
+	log    *zerolog.Logger
+	svc    ServiceURLShortener
 }
 
-// все типы которые реализовывают ендпоинты
-type Handlers struct {
-	GetDefaultHandler http.Handler
-	GetWithIdHandler  http.Handler
-	PostTextHandler   http.Handler
-	PostJSONHandler   http.Handler
+// // Слои для логирования(пока ограничился двумя)(хз насколько праивльно так делать)
+// type Logger interface {
+// 	Info() *zerolog.Event
+// 	Error() *zerolog.Event
+// }
+
+//go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
+type ServiceURLShortener interface {
+	GetURL(token string) (string, error)
+	SetURL(url string) (string, error)
 }
 
-func NewServer(addr string, mylog deps.Logger, middlware deps.Middleware, handlers Handlers) *Server {
+func NewServer(cfg *config.ServerConfig, logger *zerolog.Logger, svc ServiceURLShortener) (*Server, error) {
+	if cfg == nil {
+		return nil, errors.New("server config cannot be nil")
+	}
+	if logger == nil {
+		return nil, errors.New("logger cannot be nil")
+	}
+	if svc == nil {
+		return nil, errors.New("service cannot be nil")
+	}
+
 	s :=
 		&Server{
-			addr:     addr,
-			router:   mux.NewRouter(),
-			log:      mylog,
-			handlers: handlers,
+			cfg:    cfg,
+			router: mux.NewRouter(),
+			log:    logger,
+			svc:    svc,
 		}
-	s.routerInit(middlware, handlers)
-	return s
+
+	s.registerRoutes()
+	return s, nil
 }
 
-// muxRouter
-func (s *Server) routerInit(mw deps.Middleware, handlers Handlers) {
+func (s *Server) registerRoutes() {
 
-	// добавляем middleware(deps.Middleware) к роутеру
-	s.router.Use(mw.Handler)
+	// если интерфейсы не нужны, можно прямо здесь NewMiddleware и сразу Use
+	// логгер тоже middleware если что
 
-	s.router.HandleFunc("/", handlers.GetDefaultHandler.ServeHTTP).Methods("GET")           // 400
-	s.router.HandleFunc("/{id}", handlers.GetWithIdHandler.ServeHTTP).Methods("GET")        // 307
-	s.router.HandleFunc("/", handlers.PostTextHandler.ServeHTTP).Methods("POST")            // 201
-	s.router.HandleFunc("/api/shorten", handlers.PostJSONHandler.ServeHTTP).Methods("POST") // 201
+	s.router.Use(middleware.LoggingMiddleware(*s.log))
+	s.router.Use(middleware.LoggingMiddleware(*s.log))
+
+	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                                    // 400
+	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET")                             // 307
+	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJSON(s.svc, s.cfg.ListenPort)).Methods("POST") // 201
+	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ListenPort)).Methods("POST")            // 201
 
 }
 
 func (s *Server) Start() {
-	fullURL := "http://" + s.addr
+	fullURL := "http://" + s.cfg.ListenPort
 	s.log.Info().Str("address", fullURL).Msg("Starting server")
 
-	err := http.ListenAndServe(s.addr, s.router)
+	err := http.ListenAndServe(s.cfg.ListenPort, s.router)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Server failed to start")
-		panic(err)
+		return
 	}
 }

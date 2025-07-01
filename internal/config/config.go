@@ -21,7 +21,7 @@ type ServerConfig struct {
 	BaseURL    string
 }
 
-func LoadConfig() ServerConfig {
+func LoadConfig() *ServerConfig {
 	var cfg ServerConfig
 
 	envAddr := os.Getenv(EnvListenPort)
@@ -45,5 +45,5 @@ func LoadConfig() ServerConfig {
 		cfg.ListenPort = "localhost" + cfg.ListenPort
 	}
 
-	return cfg
+	return &cfg
 }
