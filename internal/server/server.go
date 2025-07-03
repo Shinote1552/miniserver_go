@@ -21,12 +21,6 @@ type Server struct {
 	svc    ServiceURLShortener
 }
 
-// // Слои для логирования(пока ограничился двумя)(хз насколько праивльно так делать)
-// type Logger interface {
-// 	Info() *zerolog.Event
-// 	Error() *zerolog.Event
-// }
-
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
 type ServiceURLShortener interface {
 	GetURL(token string) (string, error)
@@ -58,11 +52,8 @@ func NewServer(cfg *config.ServerConfig, logger *zerolog.Logger, svc ServiceURLS
 
 func (s *Server) registerRoutes() {
 
-	// если интерфейсы не нужны, можно прямо здесь NewMiddleware и сразу Use
-	// логгер тоже middleware если что
-
-	s.router.Use(middleware.LoggingMiddleware(*s.log))
-	s.router.Use(middleware.LoggingMiddleware(*s.log))
+	s.router.Use(middleware.MiddlewareLogging(*s.log))
+	// s.router.Use(middleware.MiddlewareCompressing(*s.log))
 
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                                    // 400
 	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET")                             // 307

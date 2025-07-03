@@ -4,14 +4,19 @@ import (
 	"crypto/rand"
 	"errors"
 	"math/big"
-	"urlshortener/internal/deps"
 )
 
-type URLShortenerService struct {
-	storage deps.InMemoryStorage
+type InMemoryStorage interface {
+	Set(key string, value string) error
+	Get(token string) (string, error)
+	GetAll() ([]string, error)
 }
 
-func NewURLShortenerService(mem deps.InMemoryStorage) *URLShortenerService {
+type URLShortenerService struct {
+	storage InMemoryStorage
+}
+
+func NewURLShortenerService(mem InMemoryStorage) *URLShortenerService {
 	return &URLShortenerService{
 		storage: mem,
 	}

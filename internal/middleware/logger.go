@@ -8,8 +8,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// LoggingMiddleware создает middleware для логирования HTTP запросов
-func LoggingMiddleware(log zerolog.Logger) func(http.Handler) http.Handler {
+// MiddlewareLogging создает middleware для логирования HTTP запросов
+func MiddlewareLogging(log zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
