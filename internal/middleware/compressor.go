@@ -68,12 +68,13 @@ func compressResponse(w http.ResponseWriter, next http.Handler) {
 	next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, nil)
 }
 
-// gzipResponseWriter минимальная обёртка для сжатия ответа
+// тип gzipResponseWriter насследует все методы встроенных в него интерфейсов
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	io.Writer
 }
 
+// переодпределяем метод Write
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
