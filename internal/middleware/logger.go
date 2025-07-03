@@ -4,8 +4,6 @@ import (
 	"net/http"
 	"time"
 
-	"urlshortener/internal/httputils"
-
 	"github.com/rs/zerolog"
 )
 
@@ -33,38 +31,40 @@ func MiddlewareLogging(log *zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			recorder := &responseRecorder{ResponseWriter: w}
 
-			// Логируем информацию о запросе
-			log.Info().
-				Str("method", r.Method).
-				Str("path", r.URL.Path).
-				Str("remote_addr", r.RemoteAddr).
-				Str("user_agent", r.Header.Get(httputils.HeaderUserAgent)).
-				Str("accept_encoding", r.Header.Get(httputils.HeaderAcceptEncoding)).
-				Str("content_encoding", r.Header.Get(httputils.HeaderContentEncoding)).
-				Msg("request started")
-
-			recorder := &responseRecorder{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK,
-			}
-
+			// Пропускаем запрос через цепочку middleware
 			next.ServeHTTP(recorder, r)
 
-			// Логируем информацию о ответе
-			logger := log.Info().
+			// Формируем лог в стиле Echo
+			logEvent := log.Info().
 				Str("method", r.Method).
-				Str("path", r.URL.Path).
+				Str("uri", r.RequestURI).
 				Int("status", recorder.statusCode).
-				Int("size", recorder.size).
-				Dur("duration", time.Since(start)).
-				Str("response_encoding", w.Header().Get(httputils.HeaderContentEncoding))
+				Dur("latency", time.Since(start)).
+				Str("ip", r.RemoteAddr)
 
-			if recorder.statusCode >= 400 {
-				logger = logger.Str("error", http.StatusText(recorder.statusCode))
+			// Добавляем User-Agent если нужно (как в Echo)
+			if userAgent := r.Header.Get("User-Agent"); userAgent != "" {
+				logEvent = logEvent.Str("user_agent", userAgent)
 			}
 
-			logger.Msg("request completed")
+			// Добавляем информацию об ошибке для статусов >= 400
+			if recorder.statusCode >= 400 {
+				logEvent = logEvent.
+					Str("error", http.StatusText(recorder.statusCode)).
+					Int("bytes_out", recorder.size)
+			}
+
+			// Форматируем сообщение как в Echo
+			msg := "request"
+			if recorder.statusCode >= 500 {
+				msg = "server error"
+			} else if recorder.statusCode >= 400 {
+				msg = "client error"
+			}
+
+			logEvent.Msg(msg)
 		})
 	}
 }
