@@ -52,8 +52,8 @@ func NewServer(cfg *config.ServerConfig, logger *zerolog.Logger, svc ServiceURLS
 
 func (s *Server) registerRoutes() {
 
-	s.router.Use(middleware.MiddlewareLogging(*s.log))
-	// s.router.Use(middleware.MiddlewareCompressing(*s.log))
+	s.router.Use(middleware.MiddlewareLogging(s.log))
+	s.router.Use(middleware.MiddlewareCompressing())
 
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                                    // 400
 	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET")                             // 307

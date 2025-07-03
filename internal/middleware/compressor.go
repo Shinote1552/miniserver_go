@@ -5,14 +5,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"urlshortener/internal/httputils"
 )
 
-const (
-	gzipScheme = "gzip"
-)
-
-// CompressingMiddleware возвращает middleware для gzip сжатия/распаковки
-func CompressingMiddleware() func(http.Handler) http.Handler {
+// MiddlewareCompressing возвращает middleware для gzip сжатия/распаковки
+func MiddlewareCompressing() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Обработка входящего сжатого контента
@@ -34,7 +31,7 @@ func CompressingMiddleware() func(http.Handler) http.Handler {
 
 // decompressRequest распаковывает входящий gzip-контент
 func decompressRequest(r *http.Request) error {
-	if !strings.Contains(r.Header.Get("Content-Encoding"), gzipScheme) {
+	if !strings.Contains(r.Header.Get(httputils.HeaderContentEncoding), httputils.EncodingGzip) {
 		return nil
 	}
 
@@ -49,15 +46,15 @@ func decompressRequest(r *http.Request) error {
 
 // acceptsGzip проверяет поддержку gzip клиентом
 func acceptsGzip(r *http.Request) bool {
-	return strings.Contains(r.Header.Get("Accept-Encoding"), gzipScheme)
+	return strings.Contains(r.Header.Get(httputils.HeaderAcceptEncoding), httputils.EncodingGzip)
 }
 
 // isCompressible проверяет нужно ли сжимать ответ
 func isCompressible(r *http.Request) bool {
-	contentType := r.Header.Get("Content-Type")
-	return strings.HasPrefix(contentType, "application/json") ||
-		strings.HasPrefix(contentType, "text/html") ||
-		strings.HasPrefix(contentType, "text/plain")
+	contentType := r.Header.Get(httputils.HeaderContentType)
+	return strings.HasPrefix(contentType, httputils.MIMEApplicationJSON) ||
+		strings.HasPrefix(contentType, httputils.MIMETextHTML) ||
+		strings.HasPrefix(contentType, httputils.MIMETextPlain)
 }
 
 // compressResponse сжимает ответ
@@ -65,13 +62,13 @@ func compressResponse(w http.ResponseWriter, next http.Handler) {
 	gz := gzip.NewWriter(w)
 	defer gz.Close()
 
-	w.Header().Set("Content-Encoding", gzipScheme)
-	w.Header().Del("Content-Length")
+	w.Header().Set(httputils.HeaderContentEncoding, httputils.EncodingGzip)
+	w.Header().Del(httputils.HeaderContentLength)
 
 	next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, nil)
 }
 
-// gzipWriter минимальная обёртка для сжатия ответа
+// gzipResponseWriter минимальная обёртка для сжатия ответа
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	io.Writer

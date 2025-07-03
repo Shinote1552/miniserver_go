@@ -38,7 +38,7 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		}
 
 		res := models.SetURLJSONResponse{URLShort: buildShortURL(urlroot, id)}
-		w.Header().Set("Content-Type", httputils.ContentTypeJSON)
+		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(res)
 	}
@@ -50,7 +50,7 @@ func buildShortURL(urlroot string, id string) string {
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.ContentTypeJSON)
+	w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(models.SetURLJSONErrorResponse{Error: message})
 }

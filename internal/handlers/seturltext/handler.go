@@ -32,7 +32,7 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		w.Header().Set("Content-Type", httputils.ContentTypePlain)
+		w.Header().Set("Content-Type", httputils.MIMETextPlain)
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(buildShortURL(urlroot, id)))
 	}
@@ -44,7 +44,7 @@ func buildShortURL(urlroot string, id string) string {
 }
 
 func writeTextPlainError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.ContentTypePlain)
+	w.Header().Set("Content-Type", httputils.MIMETextPlain)
 	w.WriteHeader(status)
 	w.Write([]byte(message))
 }
