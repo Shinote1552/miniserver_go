@@ -4,9 +4,6 @@ import (
 	"crypto/rand"
 	"math/big"
 	"urlshortener/internal/models"
-	"urlshortener/internal/storage/filestore"
-
-	"github.com/rs/zerolog/log"
 )
 
 type StorageInterface interface {
@@ -51,12 +48,7 @@ func (s *ServiceURLShortener) SetURL(originalURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := filestore.Save("/tmp/short-url-db.json", s.storage); err != nil {
-		log.Error().Err(err).Msg("Failed to save after update")
-	} else {
-		log.Info().Msg("Data updated and save in /tmp/short-url-db.json")
 
-	}
 	return token, nil
 }
 

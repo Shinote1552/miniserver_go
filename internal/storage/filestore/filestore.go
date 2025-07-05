@@ -3,7 +3,9 @@ package filestore
 import (
 	"bufio"
 	"encoding/json"
+	"log"
 	"os"
+	"path/filepath"
 	"urlshortener/internal/models"
 )
 
@@ -50,26 +52,40 @@ func Load(filePath string, storage StorageInterface) error {
 // Save сохраняет данные из хранилища в файл
 func Save(filePath string, storage StorageInterface) error {
 	if filePath == "" {
+		log.Println("Save: file path is empty, skipping")
 		return nil
+	}
+
+	log.Printf("Save: saving to %s", filePath)
+
+	// Создаем директорию, если ее нет
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("Save: error creating directory %s: %v", dir, err)
+		return err
 	}
 
 	writer, err := newFileWriter(filePath)
 	if err != nil {
+		log.Printf("Save: error creating writer: %v", err)
 		return err
 	}
 	defer writer.close()
 
 	urls, err := storage.GetAll()
 	if err != nil {
+		log.Printf("Save: error getting URLs: %v", err)
 		return err
 	}
 
 	for _, url := range urls {
 		if err := writer.writeURL(&url); err != nil {
+			log.Printf("Save: error writing URL: %v", err)
 			return err
 		}
 	}
 
+	log.Printf("Save: successfully saved %d URLs to %s", len(urls), filePath)
 	return nil
 }
 
