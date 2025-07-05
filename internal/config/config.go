@@ -7,43 +7,44 @@ import (
 )
 
 const (
-	EnvListenPort = "SERVER_ADDRESS"
-	EnvBaseURL    = "BASE_URL"
+	envServerAddress   = "SERVER_ADDRESS"
+	envBaseURL         = "BASE_URL"
+	envFileStoragePath = "FILE_STORAGE_PATH"
 )
 
 const (
-	defaultListenPort string = "localhost:8080"
-	defaultBaseURL    string = "http://localhost:8080"
+	defaultServerAddress   = "localhost:8080"
+	defaultBaseURL         = "http://localhost:8080"
+	defaultFileStoragePath = "/tmp/short-url-db.json"
 )
 
-type ServerConfig struct {
-	ListenPort string
-	BaseURL    string
+type Config struct {
+	ServerAddress   string
+	BaseURL         string
+	FileStoragePath string
 }
 
-func LoadConfig() *ServerConfig {
-	var cfg ServerConfig
+func NewConfig() *Config {
+	cfg := &Config{}
 
-	envAddr := os.Getenv(EnvListenPort)
-	envBaseURL := os.Getenv(EnvBaseURL)
-
-	// Парсим флаги командной строки
-	flag.StringVar(&cfg.ListenPort, "a", defaultListenPort, "HTTP server address")
-	flag.StringVar(&cfg.BaseURL, "b", defaultBaseURL, "Base URL for shortened links")
+	flag.StringVar(&cfg.ServerAddress, "a", defaultServerAddress, "Server address")
+	flag.StringVar(&cfg.BaseURL, "b", defaultBaseURL, "Base URL")
+	flag.StringVar(&cfg.FileStoragePath, "f", defaultFileStoragePath, "File storage path")
 	flag.Parse()
 
-	// Применяем приоритет: env vars > flags > defaults
-	if envAddr != "" {
-		cfg.ListenPort = envAddr
+	if envAddr := os.Getenv(envServerAddress); envAddr != "" {
+		cfg.ServerAddress = envAddr
 	}
-	if envBaseURL != "" {
-		cfg.BaseURL = envBaseURL
+	if envURL := os.Getenv(envBaseURL); envURL != "" {
+		cfg.BaseURL = envURL
 	}
-
-	// Автоматически добавляем localhost если указан только порт
-	if strings.HasPrefix(cfg.ListenPort, ":") {
-		cfg.ListenPort = "localhost" + cfg.ListenPort
+	if envPath := os.Getenv(envFileStoragePath); envPath != "" {
+		cfg.FileStoragePath = envPath
 	}
 
-	return &cfg
+	if strings.HasPrefix(cfg.ServerAddress, ":") {
+		cfg.ServerAddress = "localhost" + cfg.ServerAddress
+	}
+
+	return cfg
 }

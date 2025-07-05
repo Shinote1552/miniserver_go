@@ -1,92 +1,58 @@
 package inmemory
 
-import (
-	"errors"
-)
+import "urlshortener/internal/models"
 
-var (
-	SetErr           = errors.New("key or value is not valid")
-	GetErr           = errors.New("value is not exist")
-	GenerateTokenErr = errors.New("failed to generate new token")
-)
+const initLastID = 0
 
-const (
-	initLastID uint64 = 0
-)
-
-type urlshortener struct {
-	url   string
-	token string
-	id    uint64
+type MemoryStorage struct {
+	data   map[string]models.URL
+	lastID int
 }
 
-func newurlshortener(url, token string, id uint64) *urlshortener {
-	return &urlshortener{
-		url:   url,
-		token: token,
-		id:    id,
+func NewMemoryStorage() *MemoryStorage {
+	return &MemoryStorage{
+		data:   make(map[string]models.URL),
+		lastID: initLastID,
 	}
 }
 
-type InMemoryStorage struct {
-	mem     map[string]urlshortener
-	lastKey string
-}
-
-func NewInMemoryStorage() *InMemoryStorage {
-	return &InMemoryStorage{
-		mem:     make(map[string]urlshortener),
-		lastKey: "",
-	}
-}
-
-func (i *InMemoryStorage) Set(key string, value string) error {
-
-	if value == "" || key == "" {
-		return SetErr
+func (m *MemoryStorage) Set(shortURL, originalURL string) (*models.URL, error) {
+	if shortURL == "" || originalURL == "" {
+		return nil, models.ErrInvalidData
 	}
 
-	var id uint64
-	object, ok := i.mem[i.lastKey]
-	if ok {
-		id += object.id
-	} else {
-		id = initLastID
+	m.lastID++
+	url := models.URL{
+		ID:          m.lastID,
+		ShortURL:    shortURL,
+		OriginalURL: originalURL,
 	}
 
-	id++
-	i.lastKey = key
-	us := newurlshortener(value, key, id)
-	i.mem[key] = *us
-	return nil
+	m.data[shortURL] = url
+	return &url, nil
 }
 
-func (i *InMemoryStorage) Get(token string) (string, error) {
-	us, exists := i.mem[token]
+func (m *MemoryStorage) Get(shortURL string) (*models.URL, error) {
+	url, exists := m.data[shortURL]
 	if !exists {
-		return "", GetErr
+		return nil, models.ErrNotFound
 	}
-
-	url := us.url
-	return url, nil
+	return &url, nil
 }
 
-func (i *InMemoryStorage) GetAll() ([]string, error) {
-	if len(i.mem) == 0 {
-		return nil, errors.New("storage si empty")
+func (m *MemoryStorage) GetAll() ([]models.URL, error) {
+	if len(m.data) == 0 {
+		return nil, models.ErrEmpty
 	}
 
-	urls := make([]string, 0, len(i.mem))
-	for _, v := range i.mem {
-		if v.url == "" {
-			continue
-		}
-		urls = append(urls, v.url)
-	}
-
-	if len(urls) == 0 {
-		return nil, errors.New("all stored URLs are empty")
+	urls := make([]models.URL, 0, len(m.data))
+	for _, url := range m.data {
+		urls = append(urls, url)
 	}
 
 	return urls, nil
+}
+
+func (m *MemoryStorage) Close() error {
+	return nil
 }

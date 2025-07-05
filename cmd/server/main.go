@@ -22,21 +22,23 @@ func main() {
 
 	*/
 
-	cfg := config.LoadConfig()
+	cfg := config.NewConfig()
+	log := logger.GetLogger()
+	storage := inmemory.NewMemoryStorage()
 
-	storage := inmemory.NewInMemoryStorage()
-	svc := service.NewURLShortenerService(storage)
-	logger := logger.GetLogger()
+	svc := service.NewServiceURLShortener(storage)
 
 	srv, err := server.NewServer(
 		cfg,
-		logger,
+		log,
 		svc,
 	)
 
 	if err != nil {
-		logger.Fatal().Err(err)
+		log.Fatal().Err(err)
 	}
 
-	srv.Start()
+	if err := srv.Start(); err != nil {
+		log.Fatal().Err(err).Msg("Server failed")
+	}
 }

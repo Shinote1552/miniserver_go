@@ -2,48 +2,50 @@ package service
 
 import (
 	"crypto/rand"
-	"errors"
 	"math/big"
+	"urlshortener/internal/models"
 )
 
-type InMemoryStorage interface {
-	Set(key string, value string) error
-	Get(token string) (string, error)
-	GetAll() ([]string, error)
+type StorageInterface interface {
+	Set(string, string) (*models.URL, error)
+	Get(string) (*models.URL, error)
+	GetAll() ([]models.URL, error)
 }
 
-type URLShortenerService struct {
-	storage InMemoryStorage
+type ServiceURLShortener struct {
+	storage StorageInterface
 }
 
-func NewURLShortenerService(mem InMemoryStorage) *URLShortenerService {
-	return &URLShortenerService{
+func NewServiceURLShortener(mem StorageInterface) *ServiceURLShortener {
+	return &ServiceURLShortener{
 		storage: mem,
 	}
 }
 
-func (s *URLShortenerService) GetURL(token string) (string, error) {
+func (s *ServiceURLShortener) GetURL(token string) (string, error) {
 	url, err := s.storage.Get(token)
 	if err != nil {
 		return "", err
 	}
-	return url, nil
+	return url.OriginalURL, nil
 }
 
-func (s *URLShortenerService) SetURL(url string) (string, error) {
-	allURL, err := s.storage.GetAll()
+func (s *ServiceURLShortener) SetURL(originalURL string) (string, error) {
+	allURLs, err := s.storage.GetAll()
+	if err != nil && err != models.ErrEmpty {
+		return "", err
+	}
 
-	if err == nil {
-		for _, item := range allURL {
-			if item == url {
-				return "", errors.New("url is already exist")
-			}
+	for _, url := range allURLs {
+		if url.OriginalURL == originalURL {
+			return url.ShortURL, nil
 		}
 	}
 
 	token := s.tokenGenerator()
 
-	if err := s.storage.Set(token, url); err != nil {
+	_, err = s.storage.Set(token, originalURL)
+	if err != nil {
 		return "", err
 	}
 
@@ -55,7 +57,7 @@ const (
 	tokenGeneratorLetters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
-func (s *URLShortenerService) tokenGenerator() string {
+func (s *ServiceURLShortener) tokenGenerator() string {
 	token := make([]byte, 0, tokenGeneratorLength)
 	initRandRange := big.NewInt(int64(len(tokenGeneratorLetters)))
 	for i := 0; i < tokenGeneratorLength; i++ {
