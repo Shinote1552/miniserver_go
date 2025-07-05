@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"urlshortener/internal/config"
 	"urlshortener/internal/logger"
 	"urlshortener/internal/server"
 	"urlshortener/internal/service"
+	"urlshortener/internal/storage/filestore"
 	"urlshortener/internal/storage/inmemory"
 )
 
@@ -24,9 +26,34 @@ func main() {
 
 	cfg := config.NewConfig()
 	log := logger.GetLogger()
-	storage := inmemory.NewMemoryStorage()
+	mem := inmemory.NewMemoryStorage()
 
-	svc := service.NewServiceURLShortener(storage)
+	if err := filestore.Load(cfg.FileStoragePath, mem); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load data from file")
+	}
+
+	fmt.Println("\n\nDEBUG", cfg.FileStoragePath)
+
+	defer func() {
+
+		fmt.Println("\n\nDEBUG: defer is done\n")
+
+	}()
+
+	// Гарантированное сохранение при завершении
+	defer func() {
+		if err := filestore.Save(cfg.FileStoragePath, mem); err != nil {
+			log.Error().Err(err).Msg("Failed to save data")
+		} else {
+			log.Info().Msg("Data successfully saved")
+		}
+	}()
+
+	defer func() {
+
+		fmt.Println("\n\nDEFER IS WORKING?\n\n")
+	}()
+	svc := service.NewServiceURLShortener(mem)
 
 	srv, err := server.NewServer(
 		cfg,
@@ -37,7 +64,6 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err)
 	}
-
 	if err := srv.Start(); err != nil {
 		log.Fatal().Err(err).Msg("Server failed")
 	}
