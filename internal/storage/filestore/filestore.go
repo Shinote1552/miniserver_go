@@ -3,13 +3,19 @@ package filestore
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"urlshortener/internal/models"
 )
 
-// StorageInterface определяет методы работы с хранилищем
+var (
+	ErrInvalidDir = errors.New("using bad path to the save data")
+	ErrEmpty      = errors.New("file is empty")
+)
+
+// StorageInterface определяет методы работы с хранилищем БД который есть у Сервера
 type StorageInterface interface {
 	Set(string, string) (*models.URL, error)
 	Get(string) (*models.URL, error)
@@ -19,7 +25,7 @@ type StorageInterface interface {
 // Load загружает данные из файла в хранилище и возвращает информационное сообщение при успехе
 func Load(filePath string, storage StorageInterface) (string, error) {
 	if filePath == "" {
-		return "No file path provided - using empty storage", nil
+		return "No file path provided - using empty storage", ErrInvalidDir
 	}
 
 	// Получаем абсолютный путь для сообщения
@@ -31,7 +37,7 @@ func Load(filePath string, storage StorageInterface) (string, error) {
 	reader, err := newFileReader(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Sprintf("Storage file %s not found - starting with empty storage", absPath), nil
+			return fmt.Sprintf("Storage file %s not found - starting with empty storage", absPath), ErrInvalidDir
 		}
 		return "", err
 	}
@@ -56,20 +62,21 @@ func Load(filePath string, storage StorageInterface) (string, error) {
 	if loadedCount > 0 {
 		return fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath), nil
 	}
-	return fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath), nil
+	return fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath), ErrEmpty
 }
 
 // Save сохраняет данные из хранилища в файл и возвращает путь к директории
-func Save(filePath string, storage StorageInterface) (string, error) {
-	if filePath == "" {
-		return "", nil
+func Save(fileDir string, storage StorageInterface) (string, error) {
+	if fileDir == "" {
+		return "", ErrInvalidDir
 	}
 
 	// Получаем абсолютный путь к директории
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := filepath.Abs(fileDir)
 	if err != nil {
-		return "", err
+		return "", ErrInvalidDir
 	}
+
 	dir := filepath.Dir(absPath)
 
 	// Создаем директорию, если ее нет
@@ -77,7 +84,7 @@ func Save(filePath string, storage StorageInterface) (string, error) {
 		return dir, err
 	}
 
-	writer, err := newFileWriter(filePath)
+	writer, err := newFileWriter(fileDir)
 	if err != nil {
 		return dir, err
 	}
