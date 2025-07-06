@@ -1,13 +1,31 @@
 package models
 
-type SetURLJSONRequest struct {
+import "errors"
+
+var (
+	ErrInvalidData = errors.New("invalid data")
+	ErrNotFound    = errors.New("not found")
+	ErrEmpty       = errors.New("storage is empty")
+)
+
+// URL - основная модель для хранения
+type URL struct {
+	ID          int    `json:"id"`
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+// ShortenRequest - модель запроса
+type ShortenRequest struct {
 	URL string `json:"url"`
 }
 
-type SetURLJSONResponse struct {
-	URLShort string `json:"urlshort"`
+// ShortenResponse - модель ответа
+type ShortenResponse struct {
+	Result string `json:"result"`
 }
 
-type SetURLJSONErrorResponse struct {
+// ErrorResponse - модель ошибки
+type ErrorResponse struct {
 	Error string `json:"error"`
 }

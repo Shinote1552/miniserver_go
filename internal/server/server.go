@@ -14,30 +14,24 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type Server struct {
-	cfg    *config.ServerConfig
-	router *mux.Router
-	log    *zerolog.Logger
-	svc    ServiceURLShortener
-}
-
-// // Слои для логирования(пока ограничился двумя)(хз насколько праивльно так делать)
-// type Logger interface {
-// 	Info() *zerolog.Event
-// 	Error() *zerolog.Event
-// }
-
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
-type ServiceURLShortener interface {
+type URLServiceShortener interface {
 	GetURL(token string) (string, error)
 	SetURL(url string) (string, error)
 }
 
-func NewServer(cfg *config.ServerConfig, logger *zerolog.Logger, svc ServiceURLShortener) (*Server, error) {
+type Server struct {
+	router *mux.Router
+	log    *zerolog.Logger
+	svc    URLServiceShortener
+	cfg    *config.Config
+}
+
+func NewServer(cfg *config.Config, log *zerolog.Logger, svc URLServiceShortener) (*Server, error) {
 	if cfg == nil {
 		return nil, errors.New("server config cannot be nil")
 	}
-	if logger == nil {
+	if log == nil {
 		return nil, errors.New("logger cannot be nil")
 	}
 	if svc == nil {
@@ -46,38 +40,29 @@ func NewServer(cfg *config.ServerConfig, logger *zerolog.Logger, svc ServiceURLS
 
 	s :=
 		&Server{
-			cfg:    cfg,
 			router: mux.NewRouter(),
-			log:    logger,
+			log:    log,
 			svc:    svc,
+			cfg:    cfg,
 		}
 
-	s.registerRoutes()
+	s.setupRoutes()
 	return s, nil
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) setupRoutes() {
 
-	// если интерфейсы не нужны, можно прямо здесь NewMiddleware и сразу Use
-	// логгер тоже middleware если что
+	s.router.Use(middleware.MiddlewareLogging(s.log))
+	s.router.Use(middleware.MiddlewareCompressing())
 
-	s.router.Use(middleware.LoggingMiddleware(*s.log))
-	s.router.Use(middleware.LoggingMiddleware(*s.log))
-
-	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                                    // 400
-	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET")                             // 307
-	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJSON(s.svc, s.cfg.ListenPort)).Methods("POST") // 201
-	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ListenPort)).Methods("POST")            // 201
+	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                                       // 400
+	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET")                                // 307
+	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJSON(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
+	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ServerAddress)).Methods("POST")            // 201
 
 }
 
-func (s *Server) Start() {
-	fullURL := "http://" + s.cfg.ListenPort
-	s.log.Info().Str("address", fullURL).Msg("Starting server")
-
-	err := http.ListenAndServe(s.cfg.ListenPort, s.router)
-	if err != nil {
-		s.log.Error().Err(err).Msg("Server failed to start")
-		return
-	}
+func (s *Server) Start() error {
+	s.log.Info().Str("address", s.cfg.ServerAddress).Msg("Starting server")
+	return http.ListenAndServe(s.cfg.ServerAddress, s.router)
 }

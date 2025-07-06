@@ -12,7 +12,7 @@ type ServiceURLShortener interface {
 }
 
 func writeTextPlainError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.ContentTypePlain)
+	w.Header().Set("Content-Type", httputils.MIMETextPlain)
 	w.WriteHeader(status)
 	w.Write([]byte(message))
 }
