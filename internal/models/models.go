@@ -4,7 +4,7 @@ import "errors"
 
 var (
 	ErrInvalidData = errors.New("invalid data")
-	ErrNotFound    = errors.New("not found")
+	ErrUnfound     = errors.New("not found")
 	ErrEmpty       = errors.New("storage is empty")
 )
 
