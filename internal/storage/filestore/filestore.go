@@ -3,7 +3,7 @@ package filestore
 import (
 	"bufio"
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"urlshortener/internal/models"
@@ -16,77 +16,85 @@ type StorageInterface interface {
 	GetAll() ([]models.URL, error)
 }
 
-// Load загружает данные из файла в хранилище
-func Load(filePath string, storage StorageInterface) error {
+// Load загружает данные из файла в хранилище и возвращает информационное сообщение при успехе
+func Load(filePath string, storage StorageInterface) (string, error) {
 	if filePath == "" {
-		return nil
+		return "No file path provided - using empty storage", nil
+	}
+
+	// Получаем абсолютный путь для сообщения
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", err
 	}
 
 	reader, err := newFileReader(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return fmt.Sprintf("Storage file %s not found - starting with empty storage", absPath), nil
 		}
-		return err
+		return "", err
 	}
 	defer reader.close()
 
+	var loadedCount int
 	for {
 		url, err := reader.readURL()
 		if err != nil {
-			// EOF означает корректное завершение файла
 			if err.Error() == "EOF" {
 				break
 			}
-			return err
+			return "", err
 		}
 
 		if _, err := storage.Set(url.ShortURL, url.OriginalURL); err != nil {
-			return err
+			return "", err
 		}
+		loadedCount++
 	}
 
-	return nil
+	if loadedCount > 0 {
+		return fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath), nil
+	}
+	return fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath), nil
 }
 
-// Save сохраняет данные из хранилища в файл
-func Save(filePath string, storage StorageInterface) error {
+// Save сохраняет данные из хранилища в файл и возвращает путь к директории
+func Save(filePath string, storage StorageInterface) (string, error) {
 	if filePath == "" {
-		log.Println("Save: file path is empty, skipping")
-		return nil
+		return "", nil
 	}
 
-	log.Printf("Save: saving to %s", filePath)
+	// Получаем абсолютный путь к директории
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(absPath)
 
 	// Создаем директорию, если ее нет
-	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Printf("Save: error creating directory %s: %v", dir, err)
-		return err
+		return dir, err
 	}
 
 	writer, err := newFileWriter(filePath)
 	if err != nil {
-		log.Printf("Save: error creating writer: %v", err)
-		return err
+		return dir, err
 	}
 	defer writer.close()
 
 	urls, err := storage.GetAll()
 	if err != nil {
-		log.Printf("Save: error getting URLs: %v", err)
-		return err
+		return dir, err
 	}
 
 	for _, url := range urls {
 		if err := writer.writeURL(&url); err != nil {
-			log.Printf("Save: error writing URL: %v", err)
-			return err
+			return dir, err
 		}
 	}
 
-	log.Printf("Save: successfully saved %d URLs to %s", len(urls), filePath)
-	return nil
+	return dir, nil
 }
 
 // fileWriter реализует запись данных в файл *Producer*
@@ -97,7 +105,7 @@ type fileWriter struct {
 
 // newFileWriter создает новый fileWriter
 func newFileWriter(filePath string) (*fileWriter, error) {
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		return nil, err
 	}

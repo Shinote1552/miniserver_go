@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"os"
+	"os/signal"
 	"urlshortener/internal/config"
 	"urlshortener/internal/logger"
 	"urlshortener/internal/server"
@@ -28,31 +29,21 @@ func main() {
 	log := logger.GetLogger()
 	mem := inmemory.NewMemoryStorage()
 
-	if err := filestore.Load(cfg.FileStoragePath, mem); err != nil {
+	if loadDir, err := filestore.Load(cfg.FileStoragePath, mem); err != nil {
 		log.Fatal().Err(err).Msg("Failed to load data from file")
+	} else {
+		log.Info().Msg("Data successfully loaded from: " + loadDir)
 	}
-
-	fmt.Println("\n\nDEBUG", cfg.FileStoragePath)
-
-	defer func() {
-
-		fmt.Println("\n\nDEBUG: defer is done\n")
-
-	}()
 
 	// Гарантированное сохранение при завершении
 	defer func() {
-		if err := filestore.Save(cfg.FileStoragePath, mem); err != nil {
-			log.Error().Err(err).Msg("Failed to save data")
+		if saveDir, err := filestore.Save(cfg.FileStoragePath, mem); err != nil {
+			log.Fatal().Err(err).Msg("Failed to save data in: " + saveDir)
 		} else {
-			log.Info().Msg("Data successfully saved")
+			log.Info().Msg("Data successfully saved in: " + saveDir)
 		}
 	}()
 
-	defer func() {
-
-		fmt.Println("\n\nDEFER IS WORKING?\n\n")
-	}()
 	svc := service.NewServiceURLShortener(mem)
 
 	srv, err := server.NewServer(
@@ -64,7 +55,18 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err)
 	}
-	if err := srv.Start(); err != nil {
-		log.Fatal().Err(err).Msg("Server failed")
-	}
+
+	// Простой обработчик прерывания
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Fatal().Err(err).Msg("Server failed")
+		}
+	}()
+
+	// Ожидание сигнала прерывания
+	<-stop
+	log.Info().Msg("SIGINT (Ctrl+C) or SIGTERM shutdownning server...")
 }
