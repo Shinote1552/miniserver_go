@@ -30,7 +30,7 @@ func main() {
 	mem := inmemory.NewMemoryStorage()
 
 	if loadDir, err := filestore.Load(cfg.FileStoragePath, mem); err != nil {
-		log.Fatal().Err(err).Msg("Failed to load data from file")
+		log.Warn().Err(err).Msg("Failed to load data from file" + loadDir)
 	} else {
 		log.Info().Msg("Data successfully loaded from: " + loadDir)
 	}
