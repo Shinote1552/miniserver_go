@@ -35,7 +35,7 @@ func (m *MemoryStorage) Set(shortURL, originalURL string) (*models.URL, error) {
 func (m *MemoryStorage) Get(shortURL string) (*models.URL, error) {
 	url, exists := m.data[shortURL]
 	if !exists {
-		return nil, models.ErrNotFound
+		return nil, models.ErrUnfound
 	}
 	return &url, nil
 }
