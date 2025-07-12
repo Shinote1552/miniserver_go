@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"urlshortener/internal/models"
@@ -22,24 +23,34 @@ type StorageInterface interface {
 	GetAll() ([]models.URL, error)
 }
 
-// Load загружает данные из файла в хранилище и возвращает информационное сообщение при успехе
 func Load(filePath string, storage StorageInterface) (string, error) {
 	if filePath == "" {
-		return "No file path provided - using empty storage", ErrInvalidDir
+		return "No file path provided - using empty storage", nil
 	}
 
-	// Получаем абсолютный путь для сообщения
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	reader, err := newFileReader(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Sprintf("Storage file %s not found - starting with empty storage", absPath), ErrInvalidDir
+	// Проверяем существование файла
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		// Файла нет - создаем пустой файл и возвращаем сообщение
+		dir := filepath.Dir(absPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
-		return "", err
+		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to create file %s: %w", absPath, err)
+		}
+		file.Close()
+		return fmt.Sprintf("Storage file %s created - starting with empty storage", absPath), nil
+	}
+
+	reader, err := newFileReader(absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file %s: %w", absPath, err)
 	}
 	defer reader.close()
 
@@ -47,14 +58,14 @@ func Load(filePath string, storage StorageInterface) (string, error) {
 	for {
 		url, err := reader.readURL()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err == io.EOF {
 				break
 			}
-			return "", err
+			return "", fmt.Errorf("failed to read URL from file: %w", err)
 		}
 
 		if _, err := storage.Set(url.ShortURL, url.OriginalURL); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to set URL in storage: %w", err)
 		}
 		loadedCount++
 	}
@@ -62,29 +73,27 @@ func Load(filePath string, storage StorageInterface) (string, error) {
 	if loadedCount > 0 {
 		return fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath), nil
 	}
-	return fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath), ErrEmpty
+	return fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath), nil
 }
 
-// Save сохраняет данные из хранилища в файл и возвращает путь к директории
-func Save(fileDir string, storage StorageInterface) (string, error) {
-	if fileDir == "" {
+func Save(filePath string, storage StorageInterface) (string, error) {
+	if filePath == "" {
 		return "", ErrInvalidDir
 	}
 
-	// Получаем абсолютный путь к директории
-	absPath, err := filepath.Abs(fileDir)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", ErrInvalidDir
 	}
 
 	dir := filepath.Dir(absPath)
 
-	// Создаем директорию, если ее нет
+	// Создаем директорию, если ее нет (кросс-платформенный способ)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return dir, err
+		return dir, fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	writer, err := newFileWriter(fileDir)
+	writer, err := newFileWriter(absPath)
 	if err != nil {
 		return dir, err
 	}

@@ -14,9 +14,10 @@ const (
 )
 
 const (
-	defaultServerAddress   = "localhost:8080"
-	defaultBaseURL         = "http://localhost:8080"
-	defaultFileStoragePath = "tmp/short-url-db.json"
+	defaultServerAddress       = "localhost:8080"
+	defaultBaseURL             = "http://localhost:8080"
+	defaultFilestoreStorageDir = "tmp"
+	defaultStorageFile         = "short-url-db.json"
 )
 
 type Config struct {
@@ -30,7 +31,7 @@ func NewConfig() *Config {
 
 	flag.StringVar(&cfg.ServerAddress, "a", defaultServerAddress, "Server address")
 	flag.StringVar(&cfg.BaseURL, "b", defaultBaseURL, "Base URL")
-	flag.StringVar(&cfg.FileStoragePath, "f", "", "File storage path (default: "+defaultFileStoragePath+")")
+	flag.StringVar(&cfg.FileStoragePath, "f", "", "File storage path (default: "+filepath.Join(defaultFilestoreStorageDir, defaultStorageFile)+")")
 	flag.Parse()
 
 	cfg.applyEnvOverrides()
@@ -53,20 +54,26 @@ func (c *Config) applyEnvOverrides() {
 }
 
 func (c *Config) resolveFilePath() string {
-	// Если путь не задан явно, используем относительный путь по умолчанию
+	// Если путь не задан явно, формируем путь по умолчанию
 	if c.FileStoragePath == "" {
-		c.FileStoragePath = defaultFileStoragePath
+		wd, err := os.Getwd()
+		if err != nil {
+			// В случае ошибки возвращаем относительный путь
+			return filepath.Join(defaultFilestoreStorageDir, defaultStorageFile)
+		}
+		return filepath.Join(wd, defaultFilestoreStorageDir, defaultStorageFile)
 	}
 
-	// Если путь уже абсолютный (начинается с /), возвращаем как есть
+	// Если путь уже абсолютный, возвращаем как есть
 	if filepath.IsAbs(c.FileStoragePath) {
 		return c.FileStoragePath
 	}
 
-	// Для относительных путей - делаем абсолютным относительно директории запуска
+	// Для относительных путей делаем абсолютным относительно рабочей директории
 	absPath, err := filepath.Abs(c.FileStoragePath)
 	if err != nil {
-		return c.FileStoragePath // возвращаем как есть в случае ошибки
+		// В случае ошибки возвращаем как есть
+		return c.FileStoragePath
 	}
 	return absPath
 }
