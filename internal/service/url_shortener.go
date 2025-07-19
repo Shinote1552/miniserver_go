@@ -10,6 +10,7 @@ type StorageInterface interface {
 	Set(string, string) (*models.URL, error)
 	Get(string) (*models.URL, error)
 	GetAll() ([]models.URL, error)
+	PingDataBase() error
 }
 
 type ServiceURLShortener struct {

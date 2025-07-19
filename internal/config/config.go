@@ -11,6 +11,7 @@ const (
 	envServerAddress   = "SERVER_ADDRESS"
 	envBaseURL         = "BASE_URL"
 	envFileStoragePath = "FILE_STORAGE_PATH"
+	envDatabaseDSN     = "DATABASE_DSN"
 )
 
 const (
@@ -18,12 +19,14 @@ const (
 	defaultBaseURL             = "http://localhost:8080"
 	defaultFilestoreStorageDir = "tmp"
 	defaultStorageFile         = "short-url-db.json"
+	defaultDatabaseDSN         = "postgres://postgres:admin@localhost:5432/gpx_test?sslmode=disable"
 )
 
 type Config struct {
 	ServerAddress   string
 	BaseURL         string
 	FileStoragePath string
+	DatabaseDSN     string
 }
 
 func NewConfig() *Config {
@@ -32,6 +35,7 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.ServerAddress, "a", defaultServerAddress, "Server address")
 	flag.StringVar(&cfg.BaseURL, "b", defaultBaseURL, "Base URL")
 	flag.StringVar(&cfg.FileStoragePath, "f", "", "File storage path (default: "+filepath.Join(defaultFilestoreStorageDir, defaultStorageFile)+")")
+	flag.StringVar(&cfg.DatabaseDSN, "d", defaultDatabaseDSN, "Database DSN")
 	flag.Parse()
 
 	cfg.applyEnvOverrides()
@@ -50,6 +54,9 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if envPath := os.Getenv(envFileStoragePath); envPath != "" {
 		c.FileStoragePath = envPath
+	}
+	if envDSN := os.Getenv(envDatabaseDSN); envDSN != "" {
+		c.DatabaseDSN = envDSN
 	}
 }
 

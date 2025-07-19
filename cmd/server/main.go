@@ -8,7 +8,7 @@ import (
 	"urlshortener/internal/server"
 	"urlshortener/internal/service"
 	"urlshortener/internal/storage/filestore"
-	"urlshortener/internal/storage/inmemory"
+	"urlshortener/internal/storage/postgres"
 )
 
 func main() {
@@ -27,9 +27,15 @@ func main() {
 
 	cfg := config.NewConfig()
 	log := logger.GetLogger()
-	mem := inmemory.NewMemoryStorage()
+	// mem := inmemory.NewMemoryStorage()
 
-	if loadDir, err := filestore.Load(cfg.FileStoragePath, mem); err != nil {
+	// Инициализация хранилища PostgreSQL
+	storage, err := postgres.NewPostgresStorage(cfg.DatabaseDSN)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize database storage")
+	}
+
+	if loadDir, err := filestore.Load(cfg.FileStoragePath, storage); err != nil {
 		log.Warn().Err(err).Msg("Failed to load data from file" + loadDir)
 	} else {
 		log.Info().Msg("Data successfully loaded from: " + loadDir)
@@ -37,14 +43,14 @@ func main() {
 
 	// Гарантированное сохранение при завершении
 	defer func() {
-		if saveDir, err := filestore.Save(cfg.FileStoragePath, mem); err != nil {
+		if saveDir, err := filestore.Save(cfg.FileStoragePath, storage); err != nil {
 			log.Warn().Err(err).Msg("Failed to save data in: " + saveDir)
 		} else {
 			log.Info().Msg("Data successfully saved in: " + saveDir)
 		}
 	}()
 
-	svc := service.NewServiceURLShortener(mem)
+	svc := service.NewServiceURLShortener(storage)
 
 	srv, err := server.NewServer(
 		cfg,
