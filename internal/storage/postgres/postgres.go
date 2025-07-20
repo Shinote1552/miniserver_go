@@ -112,7 +112,6 @@ func (p *PostgresStorage) Close() error {
 	return p.db.Close()
 }
 
-// Ping проверяет соединение с базой данных
-func (p *PostgresStorage) Ping() error {
+func (p *PostgresStorage) PingDataBase() error {
 	return p.db.Ping()
 }

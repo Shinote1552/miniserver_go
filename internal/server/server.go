@@ -43,9 +43,9 @@ func NewServer(cfg *config.Config, log *zerolog.Logger, svc URLServiceShortener)
 	s :=
 		&Server{
 			router: mux.NewRouter(),
+			cfg:    cfg,
 			log:    log,
 			svc:    svc,
-			cfg:    cfg,
 		}
 
 	s.setupRoutes()

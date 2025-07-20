@@ -6,13 +6,13 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type DBService interface {
-	Ping() error
+type ServiceURLShortener interface {
+	PingDataBase() error
 }
 
-func HandlerPing(dbService DBService, log *zerolog.Logger) http.HandlerFunc {
+func HandlerPing(dbService ServiceURLShortener, log *zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := dbService.Ping(); err != nil {
+		if err := dbService.PingDataBase(); err != nil {
 			log.Error().Err(err).Msg("Database ping failed")
 			w.WriteHeader(http.StatusInternalServerError)
 			return

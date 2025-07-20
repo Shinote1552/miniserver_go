@@ -74,3 +74,7 @@ func (s *ServiceURLShortener) tokenGenerator() string {
 
 	return string(token)
 }
+
+func (s *ServiceURLShortener) PingDataBase() error {
+	return s.storage.PingDataBase()
+}
