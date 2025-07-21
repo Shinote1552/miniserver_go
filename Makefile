@@ -1,52 +1,57 @@
-.PHONY: postgres-up postgres-new postgres-down run
+.PHONY: db-up db-new db-down run up clean
 
-# Переменные
+# PostgreSQL configuration
 POSTGRES_IMAGE := postgres:bookworm
 POSTGRES_CONTAINER := urlshortener-db
 POSTGRES_DB := gpx_test
 POSTGRES_USER := postgres
 POSTGRES_PASSWORD := admin
 POSTGRES_PORT := 5432
-VOLUME_NAME := pg-data-urlshortener
 
-# Поднять существующий контейнер PostgreSQL
-postgres-up:
+# Start existing container
+db-up:
 	@echo "Starting existing PostgreSQL container..."
-	@docker start $(POSTGRES_CONTAINER) || (echo "Container not found, use 'make postgres-new' to create new one"; exit 1)
-	@echo "PostgreSQL is running on port $(POSTGRES_PORT)"
+	@docker start $(POSTGRES_CONTAINER) || (echo "Container not found. Use 'make db-new'"; exit 1)
+	@echo "PostgreSQL running on port $(POSTGRES_PORT)"
 
-# Создать новый контейнер PostgreSQL
-postgres-new:
+# Create new container (with automatic removal of old one)
+db-new:
 	@echo "Creating new PostgreSQL container..."
+	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@docker run -d \
 		--name $(POSTGRES_CONTAINER) \
 		-e POSTGRES_USER=$(POSTGRES_USER) \
 		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
 		-e POSTGRES_DB=$(POSTGRES_DB) \
-		-v $(VOLUME_NAME):/var/lib/postgresql/data \
 		-p $(POSTGRES_PORT):$(POSTGRES_PORT) \
 		$(POSTGRES_IMAGE)
-	@echo "New PostgreSQL container created and running on port $(POSTGRES_PORT)"
-	@sleep 2
-	@docker exec $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -c "CREATE DATABASE $(POSTGRES_DB);" || echo "Database already exists"
+	@echo "New container created and running on port $(POSTGRES_PORT)"
+	@sleep 2  # Allow time for initialization
 
-# Остановить PostgreSQL
-postgres-down:
+# Stop container
+db-down:
 	@echo "Stopping PostgreSQL container..."
-	@docker stop $(POSTGRES_CONTAINER) || true
-	@echo "PostgreSQL container stopped"
+	@docker stop $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
+	@echo "Container stopped"
 
-# Запустить сервер
+# Start server
 run:
 	@echo "Starting server..."
 	@DATABASE_DSN="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable" \
-	go run urlshortener/cmd/server
+	go run cmd/server/main.go
 
-# Комбинация: поднять PostgreSQL и запустить сервер
-up: postgres-new run
+# Combined command: DB + server
+up: db-new run
 
-# Полная очистка
-clean: postgres-down
-	@echo "Removing volume..."
-	@docker volume rm $(VOLUME_NAME) || true
+# Cleanup
+clean: db-down
+	@echo "Removing container..."
+	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@echo "Cleanup complete"
+
+# Usage examples:
+# make db-new  # Create new container (old one will be removed)
+# make db-up   # Start existing container
+# make run     # Start server only
+# make up      # Full startup (DB + server)
+# make clean   # Stop and remove container

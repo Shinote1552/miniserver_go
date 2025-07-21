@@ -6,17 +6,19 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type ServiceURLShortener interface {
+type Service interface {
 	PingDataBase() error
 }
 
-func HandlerPing(dbService ServiceURLShortener, log *zerolog.Logger) http.HandlerFunc {
+func HandlerPing(svc Service, log *zerolog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := dbService.PingDataBase(); err != nil {
+		if err := svc.PingDataBase(); err != nil {
 			log.Error().Err(err).Msg("Database ping failed")
 			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Database unavailable"))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	}
 }

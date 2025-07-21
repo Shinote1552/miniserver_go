@@ -113,5 +113,8 @@ func (p *PostgresStorage) Close() error {
 }
 
 func (p *PostgresStorage) PingDataBase() error {
-	return p.db.Ping()
+	if err := p.db.Ping(); err != nil {
+		return fmt.Errorf("postgres ping failed: %w", err)
+	}
+	return nil
 }
