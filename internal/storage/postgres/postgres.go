@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -42,7 +43,7 @@ func createTables(db *sql.DB) error {
 	return err
 }
 
-func (p *PostgresStorage) Set(shortURL, originalURL string) (*models.URL, error) {
+func (p *PostgresStorage) Set(ctx, shortURL, originalURL string) (*models.URL, error) {
 	if shortURL == "" || originalURL == "" {
 		return nil, models.ErrInvalidData
 	}
@@ -112,8 +113,8 @@ func (p *PostgresStorage) Close() error {
 	return p.db.Close()
 }
 
-func (p *PostgresStorage) PingDataBase() error {
-	if err := p.db.Ping(); err != nil {
+func (p *PostgresStorage) PingDataBase(ctx context.Context) error {
+	if err := p.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("postgres ping failed: %w", err)
 	}
 	return nil

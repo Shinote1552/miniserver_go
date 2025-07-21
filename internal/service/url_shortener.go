@@ -1,23 +1,24 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"math/big"
 	"urlshortener/internal/models"
 )
 
-type StorageInterface interface {
+type Storage interface {
 	Set(string, string) (*models.URL, error)
 	Get(string) (*models.URL, error)
-	GetAll() ([]models.URL, error)
-	PingDataBase() error
+	GetAll(ctx context.Context) ([]models.URL, error)
+	PingDataBase(context.Context) error
 }
 
 type ServiceURLShortener struct {
-	storage StorageInterface
+	storage Storage
 }
 
-func NewServiceURLShortener(mem StorageInterface) *ServiceURLShortener {
+func NewServiceURLShortener(mem Storage) *ServiceURLShortener {
 	return &ServiceURLShortener{
 		storage: mem,
 	}
@@ -31,8 +32,8 @@ func (s *ServiceURLShortener) GetURL(token string) (string, error) {
 	return url.OriginalURL, nil
 }
 
-func (s *ServiceURLShortener) SetURL(originalURL string) (string, error) {
-	allURLs, err := s.storage.GetAll()
+func (s *ServiceURLShortener) SetURL(ctx context.Context, originalURL string) (string, error) {
+	allURLs, err := s.storage.GetAll(ctx)
 	if err != nil && err != models.ErrEmpty {
 		return "", err
 	}
@@ -75,6 +76,6 @@ func (s *ServiceURLShortener) tokenGenerator() string {
 	return string(token)
 }
 
-func (s *ServiceURLShortener) PingDataBase() error {
-	return s.storage.PingDataBase()
+func (s *ServiceURLShortener) PingDataBase(ctx context.Context) error {
+	return s.storage.PingDataBase(ctx)
 }
