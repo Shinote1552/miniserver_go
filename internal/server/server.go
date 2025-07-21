@@ -57,7 +57,7 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.MiddlewareLogging(s.log))
 	s.router.Use(middleware.MiddlewareCompressing())
 
-	s.router.HandleFunc("/ping", ping.HandlerPing(s.svc, s.log)).Methods("GET")
+	s.router.HandleFunc("/ping", ping.HandlerPing(s.svc)).Methods("GET")
 	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")        // 400
 
