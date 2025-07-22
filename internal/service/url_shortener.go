@@ -8,9 +8,9 @@ import (
 )
 
 type Storage interface {
-	Set(string, string) (*models.URL, error)
-	Get(string) (*models.URL, error)
-	GetAll(ctx context.Context) ([]models.URL, error)
+	Set(context.Context, string, string) (*models.URL, error)
+	Get(context.Context, string) (*models.URL, error)
+	GetAll(context.Context) ([]models.URL, error)
 	PingDataBase(context.Context) error
 }
 
@@ -24,8 +24,8 @@ func NewServiceURLShortener(mem Storage) *ServiceURLShortener {
 	}
 }
 
-func (s *ServiceURLShortener) GetURL(token string) (string, error) {
-	url, err := s.storage.Get(token)
+func (s *ServiceURLShortener) GetURL(ctx context.Context, token string) (string, error) {
+	url, err := s.storage.Get(ctx, token)
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +46,7 @@ func (s *ServiceURLShortener) SetURL(ctx context.Context, originalURL string) (s
 
 	token := s.tokenGenerator()
 
-	_, err = s.storage.Set(token, originalURL)
+	_, err = s.storage.Set(ctx, token, originalURL)
 	if err != nil {
 		return "", err
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 	"urlshortener/internal/models"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -14,25 +15,29 @@ type PostgresStorage struct {
 	db *sql.DB
 }
 
-func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
+func NewPostgresStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
+	// Ping с контекстом
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	if err := createTables(db); err != nil {
+	// Создание таблиц с контекстом
+	if err := createTables(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
 	return &PostgresStorage{db: db}, nil
 }
 
-func createTables(db *sql.DB) error {
-	_, err := db.Exec(`
+func createTables(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS urls (
 			id SERIAL PRIMARY KEY,
 			short_url VARCHAR(10) UNIQUE NOT NULL,
@@ -43,17 +48,25 @@ func createTables(db *sql.DB) error {
 	return err
 }
 
-func (p *PostgresStorage) Set(ctx, shortURL, originalURL string) (*models.URL, error) {
+func (p *PostgresStorage) Set(ctx context.Context, shortURL, originalURL string) (*models.URL, error) {
 	if shortURL == "" || originalURL == "" {
 		return nil, models.ErrInvalidData
 	}
 
+	existingURL, err := p.Get(ctx, shortURL)
+	if err == nil && existingURL != nil {
+		if existingURL.OriginalURL == originalURL {
+			return existingURL, nil
+		}
+		return nil, models.ErrConflict
+	}
+
 	var id int
-	err := p.db.QueryRow(
+	err = p.db.QueryRowContext(ctx,
 		"INSERT INTO urls (short_url, original_url) VALUES ($1, $2) RETURNING id",
-		shortURL,
-		originalURL,
+		shortURL, originalURL,
 	).Scan(&id)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert url: %w", err)
 	}
@@ -65,9 +78,9 @@ func (p *PostgresStorage) Set(ctx, shortURL, originalURL string) (*models.URL, e
 	}, nil
 }
 
-func (p *PostgresStorage) Get(shortURL string) (*models.URL, error) {
+func (p *PostgresStorage) Get(ctx context.Context, shortURL string) (*models.URL, error) {
 	var url models.URL
-	err := p.db.QueryRow(
+	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_url, original_url FROM urls WHERE short_url = $1",
 		shortURL,
 	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
@@ -82,8 +95,8 @@ func (p *PostgresStorage) Get(shortURL string) (*models.URL, error) {
 	return &url, nil
 }
 
-func (p *PostgresStorage) GetAll() ([]models.URL, error) {
-	rows, err := p.db.Query("SELECT id, short_url, original_url FROM urls")
+func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
+	rows, err := p.db.QueryContext(ctx, "SELECT id, short_url, original_url FROM urls")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query urls: %w", err)
 	}
@@ -109,13 +122,8 @@ func (p *PostgresStorage) GetAll() ([]models.URL, error) {
 	return urls, nil
 }
 
-func (p *PostgresStorage) Close() error {
-	return p.db.Close()
-}
-
 func (p *PostgresStorage) PingDataBase(ctx context.Context) error {
-	if err := p.db.PingContext(ctx); err != nil {
-		return fmt.Errorf("postgres ping failed: %w", err)
-	}
-	return nil
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return p.db.PingContext(ctx)
 }

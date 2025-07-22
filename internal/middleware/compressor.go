@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -12,19 +13,25 @@ import (
 func MiddlewareCompressing() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Обработка входящего сжатого контента
-			if err := decompressRequest(r); err != nil {
-				http.Error(w, "invalid gzip data", http.StatusBadRequest)
-				return
-			}
+			ctx := r.Context()
 
-			// Обработка сжатия ответа
-			if acceptsGzip(r) && isCompressible(r) {
-				compressResponse(w, next)
+			select {
+			case <-ctx.Done():
 				return
-			}
+			default:
+				// Обработка сжатия
+				if err := decompressRequest(r); err != nil {
+					http.Error(w, "invalid gzip data", http.StatusBadRequest)
+					return
+				}
 
-			next.ServeHTTP(w, r)
+				if acceptsGzip(r) && isCompressible(r) {
+					compressResponse(w, next, ctx)
+					return
+				}
+
+				next.ServeHTTP(w, r.WithContext(ctx))
+			}
 		})
 	}
 }
@@ -58,23 +65,32 @@ func isCompressible(r *http.Request) bool {
 }
 
 // compressResponse сжимает ответ
-func compressResponse(w http.ResponseWriter, next http.Handler) {
+func compressResponse(w http.ResponseWriter, next http.Handler, ctx context.Context) {
 	gz := gzip.NewWriter(w)
 	defer gz.Close()
 
 	w.Header().Set(httputils.HeaderContentEncoding, httputils.EncodingGzip)
 	w.Header().Del(httputils.HeaderContentLength)
 
-	next.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, nil)
+	next.ServeHTTP(&gzipResponseWriter{
+		ResponseWriter: w,
+		Writer:         gz,
+		ctx:            ctx,
+	}, nil)
 }
 
 // тип gzipResponseWriter насследует все методы встроенных в него интерфейсов
 type gzipResponseWriter struct {
 	http.ResponseWriter
 	io.Writer
+	ctx context.Context
 }
 
-// переодпределяем метод Write
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
-	return w.Writer.Write(b)
+	select {
+	case <-w.ctx.Done():
+		return 0, w.ctx.Err()
+	default:
+		return w.Writer.Write(b)
+	}
 }

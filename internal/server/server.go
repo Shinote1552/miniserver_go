@@ -18,8 +18,8 @@ import (
 
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
 type URLServiceShortener interface {
-	GetURL(string) (string, error)
-	SetURL(string) (string, error)
+	GetURL(context.Context, string) (string, error)
+	SetURL(context.Context, string) (string, error)
 	PingDataBase(context.Context) error
 }
 
@@ -69,5 +69,8 @@ func (s *Server) setupRoutes() {
 
 func (s *Server) Start(ctx context.Context) error {
 	s.log.Info().Str("address", s.cfg.ServerAddress).Msg("Starting server")
-	return http.ListenAndServe(s.cfg.ServerAddress, s.router)
+	if err := http.ListenAndServe(s.cfg.ServerAddress, s.router); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

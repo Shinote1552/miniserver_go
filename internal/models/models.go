@@ -6,6 +6,7 @@ var (
 	ErrInvalidData = errors.New("invalid data")
 	ErrUnfound     = errors.New("unfound data")
 	ErrEmpty       = errors.New("storage is empty")
+	ErrConflict    = errors.New("url already exists with different value")
 )
 
 // URL - основная модель для хранения

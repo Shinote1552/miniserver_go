@@ -12,7 +12,6 @@ type Service interface {
 
 func HandlerPing(svc Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		w.Header().Set(httputils.HeaderContentType, httputils.MIMETextPlain)
 
 		if err := svc.PingDataBase(r.Context()); err != nil {

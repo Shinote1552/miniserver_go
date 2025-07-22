@@ -1,19 +1,21 @@
 package seturljson
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"urlshortener/internal/httputils"
 	"urlshortener/internal/models"
 )
 
 type ServiceURLShortener interface {
-	GetURL(token string) (string, error)
-	SetURL(url string) (string, error)
+	SetURL(ctx context.Context, url string) (string, error)
 }
 
 func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -22,7 +24,7 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 
 		var req models.ShortenRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 			return
 		}
 
@@ -31,9 +33,9 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		id, err := svc.SetURL(req.URL)
+		id, err := svc.SetURL(ctx, req.URL)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "failed to shorten URL: "+err.Error())
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to shorten URL: %v", err))
 			return
 		}
 
@@ -44,9 +46,8 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 	}
 }
 
-// EXAMPLE: http://localhost:8080/bzwVcXmW
-func buildShortURL(urlroot string, id string) string {
-	return "http://" + urlroot + "/" + id
+func buildShortURL(urlroot, id string) string {
+	return fmt.Sprintf("http://%s/%s", urlroot, id)
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {

@@ -1,14 +1,15 @@
 package geturl
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"urlshortener/internal/httputils"
 )
 
 type ServiceURLShortener interface {
-	GetURL(token string) (string, error)
-	SetURL(url string) (string, error)
+	GetURL(ctx context.Context, token string) (string, error)
 }
 
 func writeTextPlainError(w http.ResponseWriter, status int, message string) {
@@ -19,10 +20,12 @@ func writeTextPlainError(w http.ResponseWriter, status int, message string) {
 
 func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		id := strings.TrimPrefix(r.URL.Path, "/")
-		url, err := svc.GetURL(id)
+
+		url, err := svc.GetURL(ctx, id)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, "GetURL Error(): "+err.Error())
+			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("GetURL Error(): %v", err))
 			return
 		}
 

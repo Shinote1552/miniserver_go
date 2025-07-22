@@ -1,21 +1,24 @@
 package seturltext
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"urlshortener/internal/httputils"
 )
 
 type ServiceURLShortener interface {
-	GetURL(token string) (string, error)
-	SetURL(url string) (string, error)
+	SetURL(ctx context.Context, url string) (string, error)
 }
 
 func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, "SetURL Error(): "+err.Error())
+			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("SetURL Error(): %v", err))
 			return
 		}
 		defer r.Body.Close()
@@ -26,9 +29,9 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		id, err := svc.SetURL(url)
+		id, err := svc.SetURL(ctx, url)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, "SetURL Error(): "+err.Error())
+			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("SetURL Error(): %v", err))
 			return
 		}
 
@@ -38,9 +41,8 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 	}
 }
 
-// EXAMPLE: http://localhost:8080/bzwVcXmW
-func buildShortURL(urlroot string, id string) string {
-	return "http://" + urlroot + "/" + id
+func buildShortURL(urlroot, id string) string {
+	return fmt.Sprintf("http://%s/%s", urlroot, id)
 }
 
 func writeTextPlainError(w http.ResponseWriter, status int, message string) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"urlshortener/internal/config"
@@ -14,10 +15,13 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	cfg := initConfig()
 	log := initLogger()
-	storage := initStorage(cfg, log)
-	defer handleStorageDefer(cfg, storage, log)
+
+	storage := initStorage(ctx, cfg, log)
+
+	defer handleStorageDefer(ctx, cfg, storage, log)
 
 	svc := initService(storage)
 	srv := initServer(cfg, log, svc)
@@ -27,7 +31,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt)
 
 	go func() {
-		if err := srv.Start(); err != nil {
+		if err := srv.Start(ctx); err != nil {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
 	}()
@@ -45,14 +49,14 @@ func initLogger() zerolog.Logger {
 	return *logger.GetLogger()
 }
 
-func initStorage(cfg *config.Config, log zerolog.Logger) *postgres.PostgresStorage {
-	storage, err := postgres.NewPostgresStorage(cfg.DatabaseDSN)
+func initStorage(ctx context.Context, cfg *config.Config, log zerolog.Logger) *postgres.PostgresStorage {
+	storage, err := postgres.NewPostgresStorage(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize database storage")
 	}
 
-	if loadDir, err := filestore.Load(cfg.FileStoragePath, storage); err != nil {
-		log.Warn().Err(err).Msg("Failed to load data from file" + loadDir)
+	if loadDir, err := filestore.Load(ctx, cfg.FileStoragePath, storage, log); err != nil {
+		log.Warn().Err(err).Msg("Failed to load data from file" + loadDir + "Error: " + err.Error())
 	} else {
 		log.Info().Msg("Data successfully loaded from: " + loadDir)
 	}
@@ -60,8 +64,8 @@ func initStorage(cfg *config.Config, log zerolog.Logger) *postgres.PostgresStora
 	return storage
 }
 
-func handleStorageDefer(cfg *config.Config, storage *postgres.PostgresStorage, log zerolog.Logger) {
-	if saveDir, err := filestore.Save(cfg.FileStoragePath, storage); err != nil {
+func handleStorageDefer(ctx context.Context, cfg *config.Config, storage *postgres.PostgresStorage, log zerolog.Logger) {
+	if saveDir, err := filestore.Save(ctx, cfg.FileStoragePath, storage, log); err != nil {
 		log.Warn().Err(err).Msg("Failed to save data in: " + saveDir)
 	} else {
 		log.Info().Msg("Data successfully saved in: " + saveDir)
