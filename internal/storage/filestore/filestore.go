@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Error variables
+// Error definitions with consistent format
 var (
 	ErrInvalidDir    = errors.New("invalid directory path")
 	ErrEmptyFile     = errors.New("file is empty")
@@ -36,83 +36,143 @@ var (
 	ErrUnmarshalURL  = errors.New("failed to unmarshal URL")
 )
 
-// StorageInterface defines storage methods
 type StorageInterface interface {
 	Set(context.Context, string, string) (*models.URL, error)
 	Get(context.Context, string) (*models.URL, error)
 	GetAll(context.Context) ([]models.URL, error)
 }
 
+// Load loads URLs from file into storage
 func Load(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
+	if err := ctx.Err(); err != nil {
+		return "", logError(log, err, "context error")
 	}
 
 	if filePath == "" {
-		log.Info().Msg("No file path provided - using empty storage")
-		return "No file path provided - using empty storage", nil
+		return handleEmptyFilePath(log)
 	}
 
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := getAbsolutePath(filePath)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get absolute path")
-		return "", fmt.Errorf("%w: %v", ErrAbsPath, err)
+		return "", logAndWrapError(log, err, ErrAbsPath, "get absolute path")
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
-		}
-
-		dir := filepath.Dir(absPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Error().Err(err).Str("dir", dir).Msg("Failed to create directory")
-			return "", fmt.Errorf("%w: %v", ErrCreateDir, err)
-		}
-
-		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			log.Error().Err(err).Str("path", absPath).Msg("Failed to create file")
-			return "", fmt.Errorf("%w: %v", ErrCreateFile, err)
-		}
-		file.Close()
-
-		msg := fmt.Sprintf("Storage file %s created - starting with empty storage", absPath)
-		log.Info().Str("path", absPath).Msg(msg)
-		return msg, nil
+	if err := ensureFileExists(ctx, absPath, log); err != nil {
+		return "", err
 	}
 
-	// Check if file is empty
-	fileInfo, err := os.Stat(absPath)
-	if err != nil {
-		log.Error().Err(err).Str("path", absPath).Msg("Failed to get file info")
-		return "", fmt.Errorf("%w: %v", ErrOpenFile, err)
-	}
-
-	if fileInfo.Size() == 0 {
+	if isEmpty, err := checkFileEmpty(absPath, log); err != nil {
+		return "", err
+	} else if isEmpty {
 		msg := fmt.Sprintf("File %s is empty - starting with empty storage", absPath)
 		log.Info().Str("path", absPath).Msg(msg)
 		return msg, nil
 	}
 
+	loadedCount, err := loadURLsFromFile(ctx, absPath, storage, log)
+	if err != nil {
+		return "", err
+	}
+
+	return generateLoadResultMessage(loadedCount, absPath, log)
+}
+
+// Save saves URLs from storage to file
+func Save(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", logError(log, err, "context error")
+	}
+
+	if filePath == "" {
+		return "", logError(log, ErrInvalidDir, "invalid directory path")
+	}
+
+	absPath, err := getAbsolutePath(filePath)
+	if err != nil {
+		return "", logAndWrapError(log, err, ErrInvalidDir, "get absolute path")
+	}
+
+	dir := filepath.Dir(absPath)
+	if err := createDirectoryStructure(ctx, dir, log); err != nil {
+		return dir, err
+	}
+
+	if err := writeURLsToFile(ctx, absPath, storage, log); err != nil {
+		return dir, err
+	}
+
+	log.Info().Str("dir", dir).Msg("Data successfully saved")
+	return dir, nil
+}
+
+// Helper functions for error handling
+
+func logError(log zerolog.Logger, err error, msg string) error {
+	log.Error().Err(err).Msg(msg)
+	return err
+}
+
+func logAndWrapError(log zerolog.Logger, err error, wrapErr error, context string) error {
+	log.Error().Err(err).Str("context", context).Msg(wrapErr.Error())
+	return fmt.Errorf("%w: %v", wrapErr, err)
+}
+
+// Helper functions for Load
+
+func handleEmptyFilePath(log zerolog.Logger) (string, error) {
+	msg := "No file path provided - using empty storage"
+	log.Info().Msg(msg)
+	return msg, nil
+}
+
+func getAbsolutePath(path string) (string, error) {
+	return filepath.Abs(path)
+}
+
+func ensureFileExists(ctx context.Context, absPath string, log zerolog.Logger) error {
+	if _, err := os.Stat(absPath); !os.IsNotExist(err) {
+		return nil
+	}
+
+	if err := ctx.Err(); err != nil {
+		return logError(log, err, "context error")
+	}
+
+	dir := filepath.Dir(absPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return logAndWrapError(log, err, ErrCreateDir, "create directory")
+	}
+
+	return createEmptyFile(absPath, log)
+}
+
+func createEmptyFile(absPath string, log zerolog.Logger) error {
+	file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return logAndWrapError(log, err, ErrCreateFile, "create file")
+	}
+	return file.Close()
+}
+
+func checkFileEmpty(absPath string, log zerolog.Logger) (bool, error) {
+	fileInfo, err := os.Stat(absPath)
+	if err != nil {
+		return false, logAndWrapError(log, err, ErrOpenFile, "get file info")
+	}
+	return fileInfo.Size() == 0, nil
+}
+
+func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterface, log zerolog.Logger) (int, error) {
 	reader, err := newFileReader(absPath)
 	if err != nil {
-		log.Error().Err(err).Str("path", absPath).Msg("Failed to open file")
-		return "", fmt.Errorf("%w: %v", ErrOpenFile, err)
+		return 0, logAndWrapError(log, err, ErrOpenFile, "open file for reading")
 	}
 	defer reader.close()
 
 	var loadedCount int
 	for {
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		default:
+		if err := ctx.Err(); err != nil {
+			return 0, logError(log, err, "context error")
 		}
 
 		url, err := reader.readURL()
@@ -120,21 +180,32 @@ func Load(ctx context.Context, filePath string, storage StorageInterface, log ze
 			if err == io.EOF || errors.Is(err, ErrEmptyFile) {
 				break
 			}
-			log.Error().Err(err).Msg("Failed to read URL from file")
-			return "", fmt.Errorf("%w: %v", ErrReadURL, err)
+			return 0, logAndWrapError(log, err, ErrReadURL, "read URL from file")
 		}
 
-		if _, err := storage.Set(ctx, url.ShortURL, url.OriginalURL); err != nil {
-			if errors.Is(err, models.ErrConflict) {
-				log.Info().Str("short_url", url.ShortURL).Msg("Skipping duplicate URL")
-				continue
-			}
-			log.Error().Err(err).Msg("Failed to set URL in storage")
-			return "", fmt.Errorf("%w: %v", ErrSetURL, err)
+		if err := storeURL(ctx, url, storage, log); err != nil {
+			return 0, err
 		}
 		loadedCount++
 	}
+	return loadedCount, nil
+}
 
+func storeURL(ctx context.Context, url *models.URL, storage StorageInterface, log zerolog.Logger) error {
+	_, err := storage.Set(ctx, url.ShortURL, url.OriginalURL)
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, models.ErrConflict) {
+		log.Info().Str("short_url", url.ShortURL).Msg("Skipping duplicate URL")
+		return nil
+	}
+
+	return logAndWrapError(log, err, ErrSetURL, "set URL in storage")
+}
+
+func generateLoadResultMessage(loadedCount int, absPath string, log zerolog.Logger) (string, error) {
 	if loadedCount > 0 {
 		msg := fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath)
 		log.Info().Int("count", loadedCount).Str("path", absPath).Msg(msg)
@@ -146,64 +217,44 @@ func Load(ctx context.Context, filePath string, storage StorageInterface, log ze
 	return msg, nil
 }
 
-func Save(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
+// Helper functions for Save
+
+func createDirectoryStructure(ctx context.Context, dir string, log zerolog.Logger) error {
+	if err := ctx.Err(); err != nil {
+		return logError(log, err, "context error")
 	}
 
-	if filePath == "" {
-		log.Error().Msg("Invalid directory path")
-		return "", ErrInvalidDir
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return logAndWrapError(log, err, ErrMkdirAll, "create directory structure")
 	}
+	return nil
+}
 
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		log.Error().Err(err).Msg("Invalid directory path")
-		return "", ErrInvalidDir
-	}
-
-	dir := filepath.Dir(absPath)
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	default:
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Error().Err(err).Str("dir", dir).Msg("Failed to create directory structure")
-			return dir, fmt.Errorf("%w: %v", ErrMkdirAll, err)
-		}
-	}
-
+func writeURLsToFile(ctx context.Context, absPath string, storage StorageInterface, log zerolog.Logger) error {
 	writer, err := newFileWriter(absPath)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to create file writer")
-		return dir, fmt.Errorf("%w: %v", ErrNewFileWriter, err)
+		return logAndWrapError(log, err, ErrNewFileWriter, "create file writer")
 	}
 	defer writer.close()
 
 	urls, err := storage.GetAll(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to get all URLs")
-		return dir, fmt.Errorf("%w: %v", ErrGetAllURLs, err)
+		return logAndWrapError(log, err, ErrGetAllURLs, "get all URLs from storage")
 	}
 
 	for _, url := range urls {
-		select {
-		case <-ctx.Done():
-			return dir, ctx.Err()
-		default:
-			if err := writer.writeURL(&url); err != nil {
-				log.Error().Err(err).Msg("Failed to write URL to file")
-				return dir, fmt.Errorf("%w: %v", ErrWriteURL, err)
-			}
+		if err := ctx.Err(); err != nil {
+			return logError(log, err, "context error")
+		}
+
+		if err := writer.writeURL(&url); err != nil {
+			return logAndWrapError(log, err, ErrWriteURL, "write URL to file")
 		}
 	}
-
-	log.Info().Str("dir", dir).Msg("Data successfully saved")
-	return dir, nil
+	return nil
 }
 
+// File writer implementation (unchanged)
 type fileWriter struct {
 	file   *os.File
 	writer *bufio.Writer
@@ -248,6 +299,7 @@ func (w *fileWriter) close() error {
 	return nil
 }
 
+// File reader implementation (unchanged)
 type fileReader struct {
 	file   *os.File
 	reader *bufio.Reader
