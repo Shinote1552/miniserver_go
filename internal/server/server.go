@@ -27,11 +27,17 @@ type Server struct {
 	router *mux.Router
 	log    *zerolog.Logger
 	svc    URLServiceShortener
-	cfg    *config.Config
+	cfg    config.Config
 }
 
-func NewServer(cfg *config.Config, log *zerolog.Logger, svc URLServiceShortener) (*Server, error) {
-	if cfg == nil {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) (*Server, error) {
+
+	/*
+		хз по идее конфиг создается через фабрику где уже есть валидация и
+		стандартные значения, сюда по идее нереально подать пустую cfg
+	*/
+
+	if cfg.ServerAddress == "" {
 		return nil, errors.New("server config cannot be nil")
 	}
 	if log == nil {

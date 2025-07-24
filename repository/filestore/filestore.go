@@ -43,7 +43,7 @@ type StorageInterface interface {
 }
 
 // Load loads URLs from file into storage
-func Load(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (string, error) {
+func Load(ctx context.Context, log zerolog.Logger, filePath string, storage StorageInterface) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", logError(log, err, "context error")
 	}
@@ -64,9 +64,8 @@ func Load(ctx context.Context, filePath string, storage StorageInterface, log ze
 	if isEmpty, err := checkFileEmpty(absPath, log); err != nil {
 		return "", err
 	} else if isEmpty {
-		msg := fmt.Sprintf("File %s is empty - starting with empty storage", absPath)
-		log.Info().Str("path", absPath).Msg(msg)
-		return msg, nil
+		log.Info().Str("path", absPath).Msg("File is empty - starting with empty storage")
+		return absPath, nil
 	}
 
 	loadedCount, err := loadURLsFromFile(ctx, absPath, storage, log)
@@ -78,26 +77,26 @@ func Load(ctx context.Context, filePath string, storage StorageInterface, log ze
 }
 
 // Save saves URLs from storage to file
-func Save(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (string, error) {
+func Save(ctx context.Context, log *zerolog.Logger, filePath string, storage StorageInterface) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", logError(log, err, "context error")
+		return "", logError(*log, err, "context error")
 	}
 
 	if filePath == "" {
-		return "", logError(log, ErrInvalidDir, "invalid directory path")
+		return "", logError(*log, ErrInvalidDir, "invalid directory path")
 	}
 
 	absPath, err := getAbsolutePath(filePath)
 	if err != nil {
-		return "", logAndWrapError(log, err, ErrInvalidDir, "get absolute path")
+		return "", logAndWrapError(*log, err, ErrInvalidDir, "get absolute path")
 	}
 
 	dir := filepath.Dir(absPath)
-	if err := createDirectoryStructure(ctx, dir, log); err != nil {
+	if err := createDirectoryStructure(ctx, dir, *log); err != nil {
 		return dir, err
 	}
 
-	if err := writeURLsToFile(ctx, absPath, storage, log); err != nil {
+	if err := writeURLsToFile(ctx, absPath, storage, *log); err != nil {
 		return dir, err
 	}
 

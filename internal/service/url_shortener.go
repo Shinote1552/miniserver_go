@@ -3,49 +3,47 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"math/big"
 	"urlshortener/internal/models"
+	"urlshortener/repository"
 )
 
-type Storage interface {
-	Set(context.Context, string, string) (*models.URL, error)
-	Get(context.Context, string) (*models.URL, error)
-	GetAll(context.Context) ([]models.URL, error)
-	PingDataBase(context.Context) error
+type URLShortener struct {
+	storage repository.Storage
 }
 
-type ServiceURLShortener struct {
-	storage Storage
+func NewServiceURLShortener(storage repository.Storage) *URLShortener {
+	return &URLShortener{storage: storage}
 }
 
-func NewServiceURLShortener(mem Storage) *ServiceURLShortener {
-	return &ServiceURLShortener{
-		storage: mem,
-	}
-}
-
-func (s *ServiceURLShortener) GetURL(ctx context.Context, token string) (string, error) {
+func (s *URLShortener) GetURL(ctx context.Context, token string) (string, error) {
 	url, err := s.storage.Get(ctx, token)
 	if err != nil {
+		if errors.Is(err, models.ErrUnfound) {
+			return "", models.ErrUnfound
+		}
 		return "", err
 	}
 	return url.OriginalURL, nil
 }
 
-func (s *ServiceURLShortener) SetURL(ctx context.Context, originalURL string) (string, error) {
-	allURLs, err := s.storage.GetAll(ctx)
-	if err != nil && err != models.ErrEmpty {
+func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (string, error) {
+	exists, shortURL, err := s.storage.Exists(ctx, originalURL)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return shortURL, nil
+	}
+
+	// Генерируем уникальный токен
+	token, err := s.generateUniqueToken(ctx)
+	if err != nil {
 		return "", err
 	}
 
-	for _, url := range allURLs {
-		if url.OriginalURL == originalURL {
-			return url.ShortURL, nil
-		}
-	}
-
-	token := s.tokenGenerator()
-
+	// Сохраняем новую запись
 	_, err = s.storage.Set(ctx, token, originalURL)
 	if err != nil {
 		return "", err
@@ -54,28 +52,38 @@ func (s *ServiceURLShortener) SetURL(ctx context.Context, originalURL string) (s
 	return token, nil
 }
 
-const (
-	tokenGeneratorLength  = 8
-	tokenGeneratorLetters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-)
-
-func (s *ServiceURLShortener) tokenGenerator() string {
-	token := make([]byte, 0, tokenGeneratorLength)
-	initRandRange := big.NewInt(int64(len(tokenGeneratorLetters)))
-	for i := 0; i < tokenGeneratorLength; i++ {
-		num, err := rand.Int(rand.Reader, initRandRange)
-		if err != nil {
-			return ""
-		}
-
-		index := num.Int64()
-		symbol := tokenGeneratorLetters[index]
-		token = append(token, symbol)
-	}
-
-	return string(token)
+func (s *URLShortener) PingDataBase(ctx context.Context) error {
+	return s.storage.Ping(ctx)
 }
 
-func (s *ServiceURLShortener) PingDataBase(ctx context.Context) error {
-	return s.storage.PingDataBase(ctx)
+const (
+	tokenLength  = 8
+	tokenLetters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
+
+func (s *URLShortener) generateUniqueToken(ctx context.Context) (string, error) {
+	const maxAttempts = 3
+	for i := 0; i < maxAttempts; i++ {
+		token := generateRandomToken()
+		// Проверяем, не существует ли уже такого токена
+		_, err := s.storage.Get(ctx, token)
+		if err != nil {
+			if errors.Is(err, models.ErrUnfound) {
+				return token, nil
+			}
+			return "", err
+		}
+	}
+	return "", errors.New("failed to generate unique token after several attempts")
+}
+
+func generateRandomToken() string {
+	b := make([]byte, tokenLength)
+	letterCount := big.NewInt(int64(len(tokenLetters)))
+
+	for i := range b {
+		n, _ := rand.Int(rand.Reader, letterCount)
+		b[i] = tokenLetters[n.Int64()]
+	}
+	return string(b)
 }

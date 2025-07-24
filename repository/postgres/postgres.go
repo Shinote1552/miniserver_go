@@ -15,40 +15,26 @@ type PostgresStorage struct {
 	db *sql.DB
 }
 
-func NewPostgresStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
+func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(pingCtx); err != nil {
+	if err := db.PingContext(ctxPing); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	if err := createTables(ctx, db); err != nil {
+	if err := createTable(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
 	return &PostgresStorage{db: db}, nil
-}
-
-func createTables(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS urls (
-			id SERIAL PRIMARY KEY,
-			short_url VARCHAR(10) UNIQUE NOT NULL,
-			original_url TEXT NOT NULL
-		);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create table 'urls': %w", err)
-	}
-	return nil
 }
 
 func (p *PostgresStorage) Set(ctx context.Context, shortURL, originalURL string) (*models.URL, error) {
@@ -133,7 +119,7 @@ func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 	return urls, nil
 }
 
-func (p *PostgresStorage) PingDataBase(ctx context.Context) error {
+func (p *PostgresStorage) Ping(ctx context.Context) error {
 	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -141,6 +127,36 @@ func (p *PostgresStorage) PingDataBase(ctx context.Context) error {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 	return nil
+}
+
+func createTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS urls (
+			id SERIAL PRIMARY KEY,
+			short_url VARCHAR(10) UNIQUE NOT NULL,
+			original_url TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create table 'urls': %w", err)
+	}
+	return nil
+}
+
+func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (bool, string, error) {
+	var shortURL string
+	err := p.db.QueryRowContext(ctx,
+		"SELECT short_url FROM urls WHERE original_url = $1",
+		originalURL,
+	).Scan(&shortURL)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("failed to check URL existence: %w", err)
+	}
+	return true, shortURL, nil
 }
 
 func (p *PostgresStorage) Close() error {

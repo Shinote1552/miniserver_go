@@ -13,7 +13,7 @@ var (
 	instance zerolog.Logger
 )
 
-func GetLogger() *zerolog.Logger {
+func NewLogger() *zerolog.Logger {
 	instance = initLogger()
 	return &instance
 }

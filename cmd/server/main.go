@@ -8,78 +8,135 @@ import (
 	"urlshortener/internal/logger"
 	"urlshortener/internal/server"
 	"urlshortener/internal/service"
-	"urlshortener/internal/storage/filestore"
-	"urlshortener/internal/storage/postgres"
+	"urlshortener/repository"
+	"urlshortener/repository/filestore"
+	"urlshortener/repository/inmemory"
+	"urlshortener/repository/postgres"
 
 	"github.com/rs/zerolog"
 )
 
 func main() {
-	ctx := context.Background()
-	cfg := initConfig()
-	log := initLogger()
+	// ctxRoot := context.Background()
+	// cfg := initConfig()
+	// log := initLogger()
 
-	storage := initStorage(ctx, cfg, log)
+	// // storage := inmemory.NewMemoryStorage()
+	// storage := initStorage(ctxRoot, cfg, log)
 
-	defer handleStorageDefer(ctx, cfg, storage, log)
+	// defer handleStorageDefer(ctxRoot, cfg, storage, log)
 
-	svc := initService(storage)
-	srv := initServer(cfg, log, svc)
+	// svc := initService(storage)
+	// srv := initServer(cfg, log, svc)
 
-	// Простой обработчик прерывания
+	// stop := make(chan os.Signal, 1)
+	// signal.Notify(stop, os.Interrupt)
+
+	// go func() {
+	// 	if err := srv.Start(ctxRoot); err != nil {
+	// 		log.Fatal().Err(err).Msg("Server failed")
+	// 	}
+	// }()
+
+	// <-stop
+	// log.Info().Msg("SIGINT (Ctrl+C) or SIGTERM shutdownning server...")
+
+	ctxRoot := context.Background()
+	cfg := config.NewConfig()
+	log := logger.NewLogger()
+
+	storage := initStorage(ctxRoot, log, *cfg)
+	defer closeStorage(log, storage)
+
+	initData(ctxRoot, log, *cfg, storage)
+	defer saveData(ctxRoot, log, *cfg, storage)
+
+	service := service.NewServiceURLShortener(storage)
+	srv, err := server.NewServer(log, *cfg, service)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create server")
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 
 	go func() {
-		if err := srv.Start(ctx); err != nil {
+		if err := srv.Start(ctxRoot); err != nil {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
 	}()
 
-	// Ожидание сигнала прерывания
 	<-stop
 	log.Info().Msg("SIGINT (Ctrl+C) or SIGTERM shutdownning server...")
+
 }
 
-func initConfig() *config.Config {
-	return config.NewConfig()
-}
+func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) repository.Storage {
+	if cfg.DatabaseDSN != "" {
+		storage, err := postgres.NewStorage(ctx, cfg.DatabaseDSN)
+		if err != nil {
+			log.Fatal().
+				Err(err).
+				Msg("Failed to initialize PostgreSQL storage")
+		}
+		log.Info().
+			Msg("Using PostgreSQL storage")
+		return storage
 
-func initLogger() zerolog.Logger {
-	return *logger.GetLogger()
-}
-
-func initStorage(ctx context.Context, cfg *config.Config, log zerolog.Logger) *postgres.PostgresStorage {
-	storage, err := postgres.NewPostgresStorage(ctx, cfg.DatabaseDSN)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize database storage")
 	}
-
-	if loadDir, err := filestore.Load(ctx, cfg.FileStoragePath, storage, log); err != nil {
-		log.Warn().Err(err).Msg("Failed to load data from file" + loadDir + "Error: " + err.Error())
-	} else {
-		log.Info().Msg("Data successfully loaded from: " + loadDir)
-	}
-
+	log.Info().
+		Msg("Using in-memory storage")
+	storage := inmemory.NewStorage()
 	return storage
 }
 
-func handleStorageDefer(ctx context.Context, cfg *config.Config, storage *postgres.PostgresStorage, log zerolog.Logger) {
-	if saveDir, err := filestore.Save(ctx, cfg.FileStoragePath, storage, log); err != nil {
-		log.Warn().Err(err).Msg("Failed to save data in: " + saveDir)
-	} else {
-		log.Info().Msg("Data successfully saved in: " + saveDir)
+func closeStorage(log *zerolog.Logger, storage repository.Storage) {
+	if err := storage.Close(); err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to close storage")
+		return
 	}
+	log.Info().
+		Msg("Storage closed successfully")
 }
 
-func initService(storage *postgres.PostgresStorage) *service.ServiceURLShortener {
-	return service.NewServiceURLShortener(storage)
-}
+func initData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage repository.Storage) {
+	if cfg.FileStoragePath == "" {
+		log.Info().Msg("No file storage path specified, skip loading data")
+		return
+	}
 
-func initServer(cfg *config.Config, log zerolog.Logger, svc *service.ServiceURLShortener) *server.Server {
-	srv, err := server.NewServer(cfg, &log, svc)
+	path, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Error().
+			Err(err).
+			Str("path", cfg.FileStoragePath).
+			Msg("Failed to load data from file")
+		return
 	}
-	return srv
+
+	log.Info().
+		Str("path", path).
+		Msg("Data loaded successfully from file")
+}
+
+func saveData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage repository.Storage) {
+	if cfg.FileStoragePath == "" {
+		log.Info().Msg("No file storage path specified, skip saving data")
+		return
+	}
+
+	path, err := filestore.Save(ctx, log, cfg.FileStoragePath, storage)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("path", path).
+			Msg("Failed to save data to file")
+		return
+	}
+
+	log.Info().
+		Str("path", path).
+		Msg("Data saved successfully to file")
 }
