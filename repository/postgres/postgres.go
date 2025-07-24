@@ -11,6 +11,14 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+const (
+	storageMaxOpenConnections     = 5
+	storageMaxIdleConnections     = 2
+	storageConnectionsMaxIdleTime = 2 * time.Minute
+	storageConnectionsLifetime    = 30 * time.Minute
+	storagePingTimeout            = 5 * time.Second
+)
+
 type PostgresStorage struct {
 	db *sql.DB
 }
@@ -21,7 +29,9 @@ func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
+	initConnectionPools(db)
+
+	ctxPing, cancel := context.WithTimeout(ctx, storagePingTimeout)
 	defer cancel()
 
 	if err := db.PingContext(ctxPing); err != nil {
@@ -35,6 +45,13 @@ func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 	}
 
 	return &PostgresStorage{db: db}, nil
+}
+
+func initConnectionPools(db *sql.DB) {
+	db.SetMaxOpenConns(storageMaxOpenConnections)
+	db.SetMaxIdleConns(storageMaxIdleConnections)
+	db.SetConnMaxIdleTime(storageConnectionsMaxIdleTime)
+	db.SetConnMaxLifetime(storageConnectionsLifetime)
 }
 
 func (p *PostgresStorage) Set(ctx context.Context, shortURL, originalURL string) (*models.URL, error) {

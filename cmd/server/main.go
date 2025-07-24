@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
+	"time"
 	"urlshortener/internal/config"
 	"urlshortener/internal/logger"
 	"urlshortener/internal/server"
@@ -17,30 +20,6 @@ import (
 )
 
 func main() {
-	// ctxRoot := context.Background()
-	// cfg := initConfig()
-	// log := initLogger()
-
-	// // storage := inmemory.NewMemoryStorage()
-	// storage := initStorage(ctxRoot, cfg, log)
-
-	// defer handleStorageDefer(ctxRoot, cfg, storage, log)
-
-	// svc := initService(storage)
-	// srv := initServer(cfg, log, svc)
-
-	// stop := make(chan os.Signal, 1)
-	// signal.Notify(stop, os.Interrupt)
-
-	// go func() {
-	// 	if err := srv.Start(ctxRoot); err != nil {
-	// 		log.Fatal().Err(err).Msg("Server failed")
-	// 	}
-	// }()
-
-	// <-stop
-	// log.Info().Msg("SIGINT (Ctrl+C) or SIGTERM shutdownning server...")
-
 	ctxRoot := context.Background()
 	cfg := config.NewConfig()
 	log := logger.NewLogger()
@@ -52,23 +31,42 @@ func main() {
 	defer saveData(ctxRoot, log, *cfg, storage)
 
 	service := service.NewServiceURLShortener(storage)
+
 	srv, err := server.NewServer(log, *cfg, service)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create server")
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt)
+	runServer(srv, log)
 
+}
+
+func runServer(srv *server.Server, log *zerolog.Logger) {
+	// Создаем канал для получения сигналов ОС
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Запускаем сервер в отдельной горутине
 	go func() {
-		if err := srv.Start(ctxRoot); err != nil {
-			log.Fatal().Err(err).Msg("Server failed")
+		if err := srv.Start(context.Background()); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("Server failed to start")
 		}
 	}()
 
-	<-stop
-	log.Info().Msg("SIGINT (Ctrl+C) or SIGTERM shutdownning server...")
+	// Ждем сигнал от ОС
+	sig := <-stop
+	log.Info().Str("signal", sig.String()).Msg("Received signal, shutting down server...")
 
+	// Создаем контекст с таймаутом для graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Пытаемся корректно завершить работу сервера
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("Server shutdown error")
+	} else {
+		log.Info().Msg("Server shutdown completed successfully")
+	}
 }
 
 func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) repository.Storage {

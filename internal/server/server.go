@@ -24,10 +24,11 @@ type URLServiceShortener interface {
 }
 
 type Server struct {
-	router *mux.Router
-	log    *zerolog.Logger
-	svc    URLServiceShortener
-	cfg    config.Config
+	httpServer *http.Server
+	router     *mux.Router
+	log        *zerolog.Logger
+	svc        URLServiceShortener
+	cfg        config.Config
 }
 
 func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) (*Server, error) {
@@ -55,6 +56,11 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) 
 			svc:    svc,
 		}
 
+	s.httpServer = &http.Server{
+		Addr:    cfg.ServerAddress,
+		Handler: s.router,
+	}
+
 	s.setupRoutes()
 	return s, nil
 }
@@ -75,8 +81,13 @@ func (s *Server) setupRoutes() {
 
 func (s *Server) Start(ctx context.Context) error {
 	s.log.Info().Str("address", s.cfg.ServerAddress).Msg("Starting server")
-	if err := http.ListenAndServe(s.cfg.ServerAddress, s.router); err != nil && err != http.ErrServerClosed {
+	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
+
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
 }
