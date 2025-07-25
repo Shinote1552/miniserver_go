@@ -37,13 +37,11 @@ func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (string, 
 		return shortURL, nil
 	}
 
-	// Генерируем уникальный токен
 	token, err := s.generateUniqueToken(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	// Сохраняем новую запись
 	_, err = s.storage.Set(ctx, token, originalURL)
 	if err != nil {
 		return "", err

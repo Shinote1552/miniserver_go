@@ -14,7 +14,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Error definitions with consistent format
 var (
 	ErrInvalidDir    = errors.New("invalid directory path")
 	ErrEmptyFile     = errors.New("file is empty")

@@ -84,6 +84,7 @@ func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) re
 		return storage
 
 	}
+
 	log.Info().
 		Msg("Using in-memory storage")
 	storage := inmemory.NewStorage()

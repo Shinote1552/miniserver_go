@@ -60,16 +60,20 @@ func (p *PostgresStorage) Set(ctx context.Context, shortURL, originalURL string)
 	}
 
 	existingURL, err := p.Get(ctx, shortURL)
-	switch {
-	case err == nil && existingURL != nil:
+
+	if err == nil && existingURL != nil {
 		if existingURL.OriginalURL == originalURL {
 			return existingURL, nil
 		}
-		return nil, fmt.Errorf("%w: shortURL '%s' already exists with different originalURL", models.ErrConflict, shortURL)
-	case errors.Is(err, models.ErrUnfound):
-	case err != nil:
+		return nil, fmt.Errorf("%w: shortURL '%s' already exists with different originalURL",
+			models.ErrConflict, shortURL)
+	}
+
+	if err != nil && !errors.Is(err, models.ErrUnfound) {
 		return nil, fmt.Errorf("failed to check existing URL: %w", err)
 	}
+
+	// Валидацию прошли
 
 	var id int
 	row := p.db.QueryRowContext(ctx,
