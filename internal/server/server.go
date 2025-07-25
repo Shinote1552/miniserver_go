@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 	"urlshortener/internal/config"
 	"urlshortener/internal/handlers/getdefault"
 	"urlshortener/internal/handlers/geturl"
@@ -57,8 +58,12 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) 
 		}
 
 	s.httpServer = &http.Server{
-		Addr:    cfg.ServerAddress,
-		Handler: s.router,
+		Addr:              cfg.ServerAddress,
+		Handler:           s.router,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	s.setupRoutes()

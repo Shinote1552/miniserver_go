@@ -34,7 +34,9 @@ func main() {
 
 	srv, err := server.NewServer(log, *cfg, service)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create server")
+		log.Fatal().
+			Err(err).
+			Msg("Failed to create server")
 	}
 
 	runServer(srv, log)
@@ -42,26 +44,26 @@ func main() {
 }
 
 func runServer(srv *server.Server, log *zerolog.Logger) {
-	// Создаем канал для получения сигналов ОС
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Запускаем сервер в отдельной горутине
 	go func() {
 		if err := srv.Start(context.Background()); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("Server failed to start")
+			log.Fatal().
+				Err(err).
+				Msg("Server failed to start")
 		}
 	}()
 
-	// Ждем сигнал от ОС
+	// Shutdown, TODO gracefull shutdown
 	sig := <-stop
-	log.Info().Str("signal", sig.String()).Msg("Received signal, shutting down server...")
+	log.Info().
+		Str("signal", sig.String()).
+		Msg("Received signal, shutting down server...")
 
-	// Создаем контекст с таймаутом для graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Пытаемся корректно завершить работу сервера
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("Server shutdown error")
 	} else {
