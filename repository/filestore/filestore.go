@@ -35,10 +35,11 @@ var (
 	ErrUnmarshalURL  = errors.New("failed to unmarshal URL")
 )
 
+// StorageInterface - ограниченный интерфейс для работы с filestore
 type StorageInterface interface {
-	Set(context.Context, string, string) (*models.URL, error)
-	Get(context.Context, string) (*models.URL, error)
-	GetAll(context.Context) ([]models.URL, error)
+	CreateOrUpdate(ctx context.Context, shortURL, originalURL string) (*models.StorageURLModel, error)
+	GetByShortURL(ctx context.Context, shortURL string) (*models.StorageURLModel, error)
+	List(ctx context.Context, limit, offset int) ([]models.StorageURLModel, error)
 }
 
 // Load loads URLs from file into storage
@@ -189,8 +190,8 @@ func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterf
 	return loadedCount, nil
 }
 
-func storeURL(ctx context.Context, url *models.URL, storage StorageInterface, log zerolog.Logger) error {
-	_, err := storage.Set(ctx, url.ShortURL, url.OriginalURL)
+func storeURL(ctx context.Context, url *models.StorageURLModel, storage StorageInterface, log zerolog.Logger) error {
+	_, err := storage.CreateOrUpdate(ctx, url.ShortURL, url.OriginalURL)
 	if err == nil {
 		return nil
 	}
@@ -235,7 +236,8 @@ func writeURLsToFile(ctx context.Context, absPath string, storage StorageInterfa
 	}
 	defer writer.close()
 
-	urls, err := storage.GetAll(ctx)
+	// Используем List с большим лимитом вместо GetAll
+	urls, err := storage.List(ctx, 1000000, 0)
 	if err != nil {
 		return logAndWrapError(log, err, ErrGetAllURLs, "get all URLs from storage")
 	}
@@ -270,7 +272,7 @@ func newFileWriter(filePath string) (*fileWriter, error) {
 	}, nil
 }
 
-func (w *fileWriter) writeURL(url *models.URL) error {
+func (w *fileWriter) writeURL(url *models.StorageURLModel) error {
 	data, err := json.Marshal(url)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMarshalURL, err)
@@ -315,7 +317,7 @@ func newFileReader(filePath string) (*fileReader, error) {
 	}, nil
 }
 
-func (r *fileReader) readURL() (*models.URL, error) {
+func (r *fileReader) readURL() (*models.StorageURLModel, error) {
 	data, err := r.reader.ReadBytes('\n')
 	if err != nil {
 		if err == io.EOF && len(data) == 0 {
@@ -324,7 +326,7 @@ func (r *fileReader) readURL() (*models.URL, error) {
 		return nil, fmt.Errorf("%w: %v", ErrReadURL, err)
 	}
 
-	var url models.URL
+	var url models.StorageURLModel
 	if err := json.Unmarshal(data, &url); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnmarshalURL, err)
 	}

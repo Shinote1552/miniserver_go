@@ -79,6 +79,7 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")        // 400
 
+	// s.router.HandleFunc("/api/shorten/batch", seturljson.(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
 	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJSON(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
 	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ServerAddress)).Methods("POST")            // 201
 

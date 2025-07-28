@@ -54,77 +54,154 @@ func initConnectionPools(db *sql.DB) {
 	db.SetConnMaxLifetime(storageConnectionsLifetime)
 }
 
-func (p *PostgresStorage) Set(ctx context.Context, shortURL, originalURL string) (*models.URL, error) {
+func createTable(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS urls (
+			id SERIAL PRIMARY KEY,
+			short_url VARCHAR(10) UNIQUE NOT NULL,
+			original_url TEXT NOT NULL,
+			UNIQUE (original_url)
+		)`)
+	if err != nil {
+		return fmt.Errorf("failed to create table: %w", err)
+	}
+	return nil
+}
+
+func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, shortURL, originalURL string) (*models.StorageURLModel, error) {
 	if shortURL == "" || originalURL == "" {
 		return nil, fmt.Errorf("%w: shortURL and originalURL must not be empty", models.ErrInvalidData)
 	}
 
-	existingURL, err := p.Get(ctx, shortURL)
-
-	if err == nil && existingURL != nil {
-		if existingURL.OriginalURL == originalURL {
-			return existingURL, nil
-		}
-		return nil, fmt.Errorf("%w: shortURL '%s' already exists with different originalURL",
-			models.ErrConflict, shortURL)
-	}
-
-	if err != nil && !errors.Is(err, models.ErrUnfound) {
-		return nil, fmt.Errorf("failed to check existing URL: %w", err)
-	}
-
-	// Валидацию прошли
-
-	var id int
-	row := p.db.QueryRowContext(ctx,
-		"INSERT INTO urls (short_url, original_url) VALUES ($1, $2) RETURNING id",
+	var url models.StorageURLModel
+	err := p.db.QueryRowContext(ctx, `
+		INSERT INTO urls (short_url, original_url)
+		VALUES ($1, $2)
+		ON CONFLICT (original_url) DO UPDATE
+		SET original_url = EXCLUDED.original_url
+		RETURNING id, short_url, original_url`,
 		shortURL, originalURL,
-	)
+	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
 
-	if err := row.Scan(&id); err != nil {
-		return nil, fmt.Errorf("failed to insert URL: %w", err)
-	}
-
-	return &models.URL{
-		ID:          id,
-		ShortURL:    shortURL,
-		OriginalURL: originalURL,
-	}, nil
-}
-
-func (p *PostgresStorage) Get(ctx context.Context, shortURL string) (*models.URL, error) {
-	if shortURL == "" {
-		return nil, fmt.Errorf("%w: shortURL must not be empty", models.ErrInvalidData)
-	}
-
-	var url models.URL
-	row := p.db.QueryRowContext(ctx,
-		"SELECT id, short_url, original_url FROM urls WHERE short_url = $1",
-		shortURL,
-	)
-
-	if err := row.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("%w: shortURL '%s' not found", models.ErrUnfound, shortURL)
-		}
-		return nil, fmt.Errorf("failed to scan URL row: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upsert URL: %w", err)
 	}
 
 	return &url, nil
 }
 
-func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
-	rows, err := p.db.QueryContext(ctx, "SELECT id, short_url, original_url FROM urls")
+func (p *PostgresStorage) GetByShortURL(ctx context.Context, shortURL string) (*models.StorageURLModel, error) {
+	if shortURL == "" {
+		return nil, fmt.Errorf("%w: shortURL must not be empty", models.ErrInvalidData)
+	}
+
+	var url models.StorageURLModel
+	err := p.db.QueryRowContext(ctx,
+		"SELECT id, short_url, original_url FROM urls WHERE short_url = $1",
+		shortURL,
+	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: shortURL not found", models.ErrUnfound)
+		}
+		return nil, fmt.Errorf("failed to get URL: %w", err)
+	}
+
+	return &url, nil
+}
+
+func (p *PostgresStorage) GetByOriginalURL(ctx context.Context, originalURL string) (*models.StorageURLModel, error) {
+	if originalURL == "" {
+		return nil, fmt.Errorf("%w: originalURL must not be empty", models.ErrInvalidData)
+	}
+
+	var url models.StorageURLModel
+	err := p.db.QueryRowContext(ctx,
+		"SELECT id, short_url, original_url FROM urls WHERE original_url = $1",
+		originalURL,
+	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: originalURL not found", models.ErrUnfound)
+		}
+		return nil, fmt.Errorf("failed to get URL: %w", err)
+	}
+
+	return &url, nil
+}
+
+func (p *PostgresStorage) BatchCreate(
+	ctx context.Context,
+	batchItems []models.APIBatchRequestItem,
+) ([]models.APIBatchResponseItem, error) {
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO urls (short_url, original_url)
+		VALUES ($1, $2)
+		ON CONFLICT (original_url) DO NOTHING
+		RETURNING short_url, original_url`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	var result []models.APIBatchResponseItem
+	for _, item := range batchItems {
+		var shortURL, originalURL string
+		err := stmt.QueryRowContext(ctx, item.CorrelationID, item.OriginalURL).Scan(
+			&shortURL, &originalURL,
+		)
+
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// URL уже существует, получаем существующую запись
+				existing, err := p.GetByOriginalURL(ctx, item.OriginalURL)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get existing URL: %w", err)
+				}
+				result = append(result, models.APIBatchResponseItem{
+					CorrelationID: item.CorrelationID,
+					ShortURL:      existing.ShortURL,
+				})
+				continue
+			}
+			return nil, fmt.Errorf("failed to insert URL: %w", err)
+		}
+
+		result = append(result, models.APIBatchResponseItem{
+			CorrelationID: item.CorrelationID,
+			ShortURL:      shortURL,
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return result, nil
+}
+
+func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.StorageURLModel, error) {
+	rows, err := p.db.QueryContext(ctx,
+		"SELECT id, short_url, original_url FROM urls",
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query URLs: %w", err)
 	}
 	defer rows.Close()
 
-	var urls []models.URL
+	var urls []models.StorageURLModel
 	for rows.Next() {
-		var url models.URL
+		var url models.StorageURLModel
 		if err := rows.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
-			return nil, fmt.Errorf("failed to scan URL row: %w", err)
+			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
 		urls = append(urls, url)
 	}
@@ -133,51 +210,115 @@ func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 
-	if len(urls) == 0 {
-		return nil, fmt.Errorf("%w: no URLs found", models.ErrEmpty)
+	return urls, nil
+}
+
+func (p *PostgresStorage) Delete(ctx context.Context, shortURL string) error {
+	if shortURL == "" {
+		return fmt.Errorf("%w: shortURL must not be empty", models.ErrInvalidData)
+	}
+
+	result, err := p.db.ExecContext(ctx,
+		"DELETE FROM urls WHERE short_url = $1",
+		shortURL,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete URL: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("%w: URL not found", models.ErrUnfound)
+	}
+
+	return nil
+}
+
+func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.StorageURLModel, error) {
+	if limit <= 0 || offset < 0 {
+		return nil, fmt.Errorf("%w: invalid pagination params", models.ErrInvalidData)
+	}
+
+	rows, err := p.db.QueryContext(ctx,
+		"SELECT id, short_url, original_url FROM urls LIMIT $1 OFFSET $2",
+		limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []models.StorageURLModel
+	for rows.Next() {
+		var url models.StorageURLModel
+		if err := rows.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
+			return nil, fmt.Errorf("failed to scan URL: %w", err)
+		}
+		urls = append(urls, url)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 
 	return urls, nil
 }
 
-func (p *PostgresStorage) Ping(ctx context.Context) error {
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	if err := p.db.PingContext(pingCtx); err != nil {
-		return fmt.Errorf("database ping failed: %w", err)
-	}
-	return nil
-}
-
-func createTable(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS urls (
-			id SERIAL PRIMARY KEY,
-			short_url VARCHAR(10) UNIQUE NOT NULL,
-			original_url TEXT NOT NULL
-		);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create table 'urls': %w", err)
-	}
-	return nil
-}
-
-func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (bool, string, error) {
-	var shortURL string
+func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (*models.StorageURLModel, error) {
+	var url models.StorageURLModel
 	err := p.db.QueryRowContext(ctx,
-		"SELECT short_url FROM urls WHERE original_url = $1",
+		"SELECT id, short_url, original_url FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&shortURL)
+	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return false, "", nil
+			return nil, nil
 		}
-		return false, "", fmt.Errorf("failed to check URL existence: %w", err)
+		return nil, fmt.Errorf("failed to check URL existence: %w", err)
 	}
-	return true, shortURL, nil
+
+	return &url, nil
+}
+
+func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.StorageURLModel, error) {
+	if len(originalURLs) == 0 {
+		return nil, fmt.Errorf("%w: empty URL list", models.ErrInvalidData)
+	}
+
+	rows, err := p.db.QueryContext(ctx,
+		"SELECT id, short_url, original_url FROM urls WHERE original_url = ANY($1)",
+		originalURLs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []models.StorageURLModel
+	for rows.Next() {
+		var url models.StorageURLModel
+		if err := rows.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
+			return nil, fmt.Errorf("failed to scan URL row: %w", err)
+		}
+		result = append(result, url)
+	}
+
+	return result, nil
+}
+
+func (p *PostgresStorage) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, storagePingTimeout)
+	defer cancel()
+
+	if err := p.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+	return nil
 }
 
 func (p *PostgresStorage) Close() error {

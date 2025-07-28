@@ -22,7 +22,7 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		var req models.ShortenRequest
+		var req models.APIShortenRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 			return
@@ -39,7 +39,7 @@ func HandlerSetURLJSON(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		res := models.ShortenResponse{Result: buildShortURL(urlroot, id)}
+		res := models.APIShortenResponse{Result: buildShortURL(urlroot, id)}
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(res)
@@ -53,5 +53,5 @@ func buildShortURL(urlroot, id string) string {
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(models.ErrorResponse{Error: message})
+	json.NewEncoder(w).Encode(models.APIErrorResponse{Error: message})
 }

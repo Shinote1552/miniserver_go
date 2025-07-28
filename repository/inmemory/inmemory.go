@@ -1,26 +1,26 @@
-// internal/storage/inmemory/memory.go
 package inmemory
 
 import (
 	"context"
+	"sort"
 	"urlshortener/internal/models"
 )
 
 const initLastID = 0
 
 type InmemoryStorage struct {
-	data   map[string]models.URL
+	data   map[string]models.StorageURLModel
 	lastID int
 }
 
 func NewStorage() *InmemoryStorage {
 	return &InmemoryStorage{
-		data:   make(map[string]models.URL),
+		data:   make(map[string]models.StorageURLModel),
 		lastID: initLastID,
 	}
 }
 
-func (m *InmemoryStorage) Set(ctx context.Context, shortURL, originalURL string) (*models.URL, error) {
+func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, shortURL, originalURL string) (*models.StorageURLModel, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
@@ -37,7 +37,7 @@ func (m *InmemoryStorage) Set(ctx context.Context, shortURL, originalURL string)
 	}
 
 	m.lastID++
-	url := models.URL{
+	url := models.StorageURLModel{
 		ID:          m.lastID,
 		ShortURL:    shortURL,
 		OriginalURL: originalURL,
@@ -47,7 +47,7 @@ func (m *InmemoryStorage) Set(ctx context.Context, shortURL, originalURL string)
 	return &url, nil
 }
 
-func (m *InmemoryStorage) Get(ctx context.Context, shortURL string) (*models.URL, error) {
+func (m *InmemoryStorage) GetByShortURL(ctx context.Context, shortURL string) (*models.StorageURLModel, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
@@ -63,7 +63,95 @@ func (m *InmemoryStorage) Get(ctx context.Context, shortURL string) (*models.URL
 	return &url, nil
 }
 
-func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.URL, error) {
+func (m *InmemoryStorage) GetByOriginalURL(ctx context.Context, originalURL string) (*models.StorageURLModel, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	for _, url := range m.data {
+		if url.OriginalURL == originalURL {
+			return &url, nil
+		}
+	}
+	return nil, models.ErrUnfound
+}
+
+func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.StorageURLModel, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	urls := make([]models.StorageURLModel, 0, len(m.data))
+	for _, url := range m.data {
+		urls = append(urls, url)
+	}
+
+	// TODO Опционально: сортировка по ID, возможно лучше убрать
+	sort.Slice(urls, func(i, j int) bool {
+		return urls[i].ID < urls[j].ID
+	})
+
+	return urls, nil
+}
+
+func (m *InmemoryStorage) Delete(ctx context.Context, shortURL string) error {
+	if err := ctx.Err(); err != nil {
+		return models.ErrInvalidData
+	}
+
+	delete(m.data, shortURL)
+	return nil
+}
+
+func (m *InmemoryStorage) BatchCreate(ctx context.Context, batchItems []models.APIBatchRequestItem) ([]models.APIBatchResponseItem, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	results := make([]models.APIBatchResponseItem, 0, len(batchItems))
+	for _, item := range batchItems {
+		shortURL := item.CorrelationID
+		_, err := m.CreateOrUpdate(ctx, shortURL, item.OriginalURL)
+		if err != nil && err != models.ErrConflict {
+			return nil, err
+		}
+
+		results = append(results, models.APIBatchResponseItem{
+			CorrelationID: item.CorrelationID,
+			ShortURL:      shortURL,
+		})
+	}
+
+	return results, nil
+}
+
+func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (*models.StorageURLModel, error) {
+	for _, url := range m.data {
+		if url.OriginalURL == originalURL {
+			return &url, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.StorageURLModel, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	var result []models.StorageURLModel
+	for _, originalURL := range originalURLs {
+		for _, url := range m.data {
+			if url.OriginalURL == originalURL {
+				result = append(result, url)
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models.StorageURLModel, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
@@ -72,12 +160,26 @@ func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 		return nil, models.ErrEmpty
 	}
 
-	urls := make([]models.URL, 0, len(m.data))
+	urls := make([]models.StorageURLModel, 0, len(m.data))
 	for _, url := range m.data {
 		urls = append(urls, url)
 	}
 
-	return urls, nil
+	sort.Slice(urls, func(i, j int) bool {
+		return urls[i].ID < urls[j].ID
+	})
+
+	start := offset
+	if start > len(urls) {
+		start = len(urls)
+	}
+
+	end := start + limit
+	if end > len(urls) {
+		end = len(urls)
+	}
+
+	return urls[start:end], nil
 }
 
 func (m *InmemoryStorage) Ping(ctx context.Context) error {
@@ -87,18 +189,8 @@ func (m *InmemoryStorage) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (bool, string, error) {
-	for _, url := range m.data {
-		if url.OriginalURL == originalURL {
-			return true, url.ShortURL, nil
-		}
-	}
-	return false, "", nil
-}
-
-// Cleaning data and reset the counter
 func (m *InmemoryStorage) Close() error {
-	m.data = make(map[string]models.URL)
+	m.data = make(map[string]models.StorageURLModel)
 	m.lastID = initLastID
 	return nil
 }

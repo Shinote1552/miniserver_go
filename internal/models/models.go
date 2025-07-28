@@ -9,24 +9,51 @@ var (
 	ErrConflict    = errors.New("url already exists with different value")
 )
 
-// URL - основная модель для хранения
-type URL struct {
-	ID          int    `json:"id"`
-	ShortURL    string `json:"short_url"`
-	OriginalURL string `json:"original_url"`
-}
+// Storage модели (для работы с хранилищем)
+type (
+	// StorageURLModel - основная модель хранения URL
+	StorageURLModel struct {
+		ID          int    `json:"id"`
+		ShortURL    string `json:"short_url"`
+		OriginalURL string `json:"original_url"`
+	}
+)
 
-// ShortenRequest - модель запроса
-type ShortenRequest struct {
-	URL string `json:"url"`
-}
+// API модели (для HTTP-взаимодействия)
+type (
+	// APIShortenRequest - запрос на сокращение URL
+	APIShortenRequest struct {
+		URL string `json:"url"`
+	}
 
-// ShortenResponse - модель ответа
-type ShortenResponse struct {
-	Result string `json:"result"`
-}
+	// APIShortenResponse - ответ с сокращённым URL
+	APIShortenResponse struct {
+		Result string `json:"result"`
+	}
 
-// ErrorResponse - модель ошибки
-type ErrorResponse struct {
-	Error string `json:"error"`
-}
+	// APIErrorResponse - модель ошибки API
+	APIErrorResponse struct {
+		Error string `json:"error"`
+	}
+
+	// APIBatchRequestItem - элемент пакетного запроса
+	APIBatchRequestItem struct {
+		CorrelationID string `json:"correlation_id"`
+		OriginalURL   string `json:"original_url"`
+	}
+
+	// APIBatchResponseItem - элемент пакетного ответа
+	APIBatchResponseItem struct {
+		CorrelationID string `json:"correlation_id"`
+		ShortURL      string `json:"short_url"`
+	}
+)
+
+// // Service модели (для бизнес-логики, если потребуется)
+// type (
+// 	// ServiceURL - модель для работы сервиса
+// 	ServiceURL struct {
+// 		Short    string
+// 		Original string
+// 	}
+// )
