@@ -49,6 +49,8 @@ clean: db-down
 	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@echo "Cleanup complete"
 
+# in server psql -h localhost -p 5432 -U postgres -d gpx_test
+
 # Usage examples:
 # make db-new  # Create new container (old one will be removed)
 # make db-up   # Start existing container

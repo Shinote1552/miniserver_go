@@ -75,14 +75,19 @@ func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) re
 	if cfg.DatabaseDSN != "" {
 		storage, err := postgres.NewStorage(ctx, cfg.DatabaseDSN)
 		if err != nil {
-			log.Fatal().
+			log.Error().
 				Err(err).
 				Msg("Failed to initialize PostgreSQL storage")
+
+			log.Info().
+				Msg("Falling back to in-memory storage")
+			storage := inmemory.NewStorage()
+			return storage
 		}
+
 		log.Info().
 			Msg("Using PostgreSQL storage")
 		return storage
-
 	}
 
 	log.Info().
