@@ -7,11 +7,13 @@ import (
 	"time"
 	"urlshortener/internal/config"
 	"urlshortener/internal/handlers/getdefault"
-	"urlshortener/internal/handlers/geturl"
-	"urlshortener/internal/handlers/ping"
+	"urlshortener/internal/handlers/getping"
+	"urlshortener/internal/handlers/geturltext"
 	"urlshortener/internal/handlers/seturljson"
+	"urlshortener/internal/handlers/seturljsonbatch"
 	"urlshortener/internal/handlers/seturltext"
 	"urlshortener/internal/middleware"
+	"urlshortener/internal/models"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
@@ -21,6 +23,7 @@ import (
 type URLServiceShortener interface {
 	GetURL(context.Context, string) (string, error)
 	SetURL(context.Context, string) (string, error)
+	BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error)
 	PingDataBase(context.Context) error
 }
 
@@ -75,13 +78,13 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.MiddlewareLogging(s.log))
 	s.router.Use(middleware.MiddlewareCompressing())
 
-	s.router.HandleFunc("/ping", ping.HandlerPing(s.svc)).Methods("GET")
-	s.router.HandleFunc("/{id}", geturl.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
-	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")        // 400
+	s.router.HandleFunc("/ping", getping.HandlerPing(s.svc)).Methods("GET")
+	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
+	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")            // 400
 
-	// s.router.HandleFunc("/api/shorten/batch", seturljson.(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
-	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJSON(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
-	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ServerAddress)).Methods("POST")            // 201
+	s.router.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
+	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJson(s.svc, s.cfg.ServerAddress)).Methods("POST")                 // 201
+	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ServerAddress)).Methods("POST")                            // 201
 
 }
 

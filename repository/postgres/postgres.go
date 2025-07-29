@@ -134,8 +134,8 @@ func (p *PostgresStorage) GetByOriginalURL(ctx context.Context, originalURL stri
 
 func (p *PostgresStorage) BatchCreate(
 	ctx context.Context,
-	batchItems []models.APIBatchRequestItem,
-) ([]models.APIBatchResponseItem, error) {
+	batchItems []models.APIShortenRequestBatch,
+) ([]models.APIShortenResponseBatch, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -152,7 +152,7 @@ func (p *PostgresStorage) BatchCreate(
 	}
 	defer stmt.Close()
 
-	var result []models.APIBatchResponseItem
+	var result []models.APIShortenResponseBatch
 	for _, item := range batchItems {
 		var shortURL, originalURL string
 		err := stmt.QueryRowContext(ctx, item.CorrelationID, item.OriginalURL).Scan(
@@ -166,7 +166,7 @@ func (p *PostgresStorage) BatchCreate(
 				if err != nil {
 					return nil, fmt.Errorf("failed to get existing URL: %w", err)
 				}
-				result = append(result, models.APIBatchResponseItem{
+				result = append(result, models.APIShortenResponseBatch{
 					CorrelationID: item.CorrelationID,
 					ShortURL:      existing.ShortURL,
 				})
@@ -175,7 +175,7 @@ func (p *PostgresStorage) BatchCreate(
 			return nil, fmt.Errorf("failed to insert URL: %w", err)
 		}
 
-		result = append(result, models.APIBatchResponseItem{
+		result = append(result, models.APIShortenResponseBatch{
 			CorrelationID: item.CorrelationID,
 			ShortURL:      shortURL,
 		})
@@ -186,31 +186,6 @@ func (p *PostgresStorage) BatchCreate(
 	}
 
 	return result, nil
-}
-
-func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.StorageURLModel, error) {
-	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_url, original_url FROM urls",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query URLs: %w", err)
-	}
-	defer rows.Close()
-
-	var urls []models.StorageURLModel
-	for rows.Next() {
-		var url models.StorageURLModel
-		if err := rows.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
-			return nil, fmt.Errorf("failed to scan URL: %w", err)
-		}
-		urls = append(urls, url)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows iteration error: %w", err)
-	}
-
-	return urls, nil
 }
 
 func (p *PostgresStorage) Delete(ctx context.Context, shortURL string) error {
@@ -326,4 +301,29 @@ func (p *PostgresStorage) Close() error {
 		return fmt.Errorf("failed to close database connection: %w", err)
 	}
 	return nil
+}
+
+func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.StorageURLModel, error) {
+	rows, err := p.db.QueryContext(ctx,
+		"SELECT id, short_url, original_url FROM urls",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []models.StorageURLModel
+	for rows.Next() {
+		var url models.StorageURLModel
+		if err := rows.Scan(&url.ID, &url.ShortURL, &url.OriginalURL); err != nil {
+			return nil, fmt.Errorf("failed to scan URL: %w", err)
+		}
+		urls = append(urls, url)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return urls, nil
 }

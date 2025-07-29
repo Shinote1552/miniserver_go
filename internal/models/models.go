@@ -37,13 +37,13 @@ type (
 	}
 
 	// APIBatchRequestItem - элемент пакетного запроса
-	APIBatchRequestItem struct {
+	APIShortenRequestBatch struct {
 		CorrelationID string `json:"correlation_id"`
 		OriginalURL   string `json:"original_url"`
 	}
 
 	// APIBatchResponseItem - элемент пакетного ответа
-	APIBatchResponseItem struct {
+	APIShortenResponseBatch struct {
 		CorrelationID string `json:"correlation_id"`
 		ShortURL      string `json:"short_url"`
 	}

@@ -16,7 +16,7 @@ type (
 		Delete(ctx context.Context, shortURL string) error
 
 		// Пакетные операции
-		BatchCreate(ctx context.Context, batchItems []models.APIBatchRequestItem) ([]models.APIBatchResponseItem, error)
+		BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error)
 
 		// Проверки существования
 		Exists(ctx context.Context, originalURL string) (*models.StorageURLModel, error)

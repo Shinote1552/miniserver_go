@@ -103,12 +103,12 @@ func (m *InmemoryStorage) Delete(ctx context.Context, shortURL string) error {
 	return nil
 }
 
-func (m *InmemoryStorage) BatchCreate(ctx context.Context, batchItems []models.APIBatchRequestItem) ([]models.APIBatchResponseItem, error) {
+func (m *InmemoryStorage) BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
 
-	results := make([]models.APIBatchResponseItem, 0, len(batchItems))
+	results := make([]models.APIShortenResponseBatch, 0, len(batchItems))
 	for _, item := range batchItems {
 		shortURL := item.CorrelationID
 		_, err := m.CreateOrUpdate(ctx, shortURL, item.OriginalURL)
@@ -116,7 +116,7 @@ func (m *InmemoryStorage) BatchCreate(ctx context.Context, batchItems []models.A
 			return nil, err
 		}
 
-		results = append(results, models.APIBatchResponseItem{
+		results = append(results, models.APIShortenResponseBatch{
 			CorrelationID: item.CorrelationID,
 			ShortURL:      shortURL,
 		})

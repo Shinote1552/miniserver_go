@@ -1,4 +1,4 @@
-package seturljson
+package seturljsonbatch
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, url string) (string, error)
+	BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error)
 }
 
-func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
+func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -22,29 +22,40 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		var req models.APIShortenRequest
+		var reqBatch []models.APIShortenRequestBatch
 		if err := json.NewDecoder(r.Body).
-			Decode(&req); err != nil {
+			Decode(&reqBatch); err != nil {
 			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 			return
 		}
 
-		if req.URL == "" {
-			writeJSONError(w, http.StatusBadRequest, "url is required")
+		if len(reqBatch) == 0 {
+			writeJSONError(w, http.StatusBadRequest, "empty batch request")
 			return
 		}
 
-		id, err := svc.SetURL(ctx, req.URL)
+		// ХЗ насколько правильно массив данных валидировать
+		for _, item := range reqBatch {
+			if item.CorrelationID == "" || item.OriginalURL == "" {
+				writeJSONError(w, http.StatusBadRequest, "correlation_id and original_url are required for all items")
+				return
+			}
+		}
+
+		resBatch, err := svc.BatchCreate(ctx, reqBatch)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to shorten URL: %v", err))
+			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to process batch: %v", err))
 			return
 		}
 
-		res := models.APIShortenResponse{Result: buildShortURL(urlroot, id)}
+		for i := range resBatch {
+			resBatch[i].ShortURL = buildShortURL(urlroot, resBatch[i].ShortURL)
+		}
 
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
-		if err := json.NewEncoder(w).Encode(res); err != nil {
+
+		if err := json.NewEncoder(w).Encode(resBatch); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to encode response: %v", err))
 			return
 		}

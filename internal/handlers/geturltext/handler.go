@@ -1,4 +1,4 @@
-package geturl
+package geturltext
 
 import (
 	"context"
