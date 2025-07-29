@@ -19,6 +19,10 @@ const (
 	storagePingTimeout            = 5 * time.Second
 )
 
+const (
+	pgErrCodeUniqueViolation = "23505"
+)
+
 type PostgresStorage struct {
 	db *sql.DB
 }
@@ -70,21 +74,27 @@ func createTable(ctx context.Context, db *sql.DB) error {
 
 func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, shortURL, originalURL string) (*models.StorageURLModel, error) {
 	if shortURL == "" || originalURL == "" {
-		return nil, fmt.Errorf("%w: shortURL and originalURL must not be empty", models.ErrInvalidData)
+		return nil, models.ErrInvalidData
 	}
 
 	var url models.StorageURLModel
 	err := p.db.QueryRowContext(ctx, `
-		INSERT INTO urls (short_url, original_url)
-		VALUES ($1, $2)
-		ON CONFLICT (original_url) DO UPDATE
-		SET original_url = EXCLUDED.original_url
-		RETURNING id, short_url, original_url`,
+        INSERT INTO urls (short_url, original_url)
+        VALUES ($1, $2)
+        ON CONFLICT (original_url) DO NOTHING
+        RETURNING id, short_url, original_url`,
 		shortURL, originalURL,
 	).Scan(&url.ID, &url.ShortURL, &url.OriginalURL)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to upsert URL: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			existing, err := p.GetByOriginalURL(ctx, originalURL)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %v", models.ErrConflict, err)
+			}
+			return existing, models.ErrConflict
+		}
+		return nil, fmt.Errorf("database error: %w", err)
 	}
 
 	return &url, nil

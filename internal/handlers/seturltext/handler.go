@@ -2,10 +2,12 @@ package seturltext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"urlshortener/internal/httputils"
+	"urlshortener/internal/models"
 )
 
 type ServiceURLShortener interface {
@@ -18,20 +20,26 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("SetURL Error(): %v", err))
+			writeTextPlainError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
 			return
 		}
 		defer r.Body.Close()
 
 		url := string(body)
 		if url == "" {
-			writeTextPlainError(w, http.StatusBadRequest, "empty request body")
+			writeTextPlainError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
 			return
 		}
 
 		id, err := svc.SetURL(ctx, url)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("SetURL Error(): %v", err))
+			if errors.Is(err, models.ErrConflict) {
+				w.Header().Set("Content-Type", httputils.MIMETextPlain)
+				w.WriteHeader(http.StatusConflict)
+				w.Write([]byte(buildShortURL(urlroot, id)))
+				return
+			}
+			writeTextPlainError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 

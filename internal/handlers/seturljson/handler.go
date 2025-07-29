@@ -3,6 +3,7 @@ package seturljson
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"urlshortener/internal/httputils"
@@ -23,20 +24,28 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		}
 
 		var req models.APIShortenRequest
-		if err := json.NewDecoder(r.Body).
-			Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
 			return
 		}
 
 		if req.URL == "" {
-			writeJSONError(w, http.StatusBadRequest, "url is required")
+			writeJSONError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
 			return
 		}
 
 		id, err := svc.SetURL(ctx, req.URL)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to shorten URL: %v", err))
+			if errors.Is(err, models.ErrConflict) {
+				res := models.APIShortenResponse{
+					Result: buildShortURL(urlroot, id),
+				}
+				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(res)
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
@@ -45,7 +54,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
 		if err := json.NewEncoder(w).Encode(res); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("failed to encode response: %v", err))
+			writeJSONError(w, http.StatusInternalServerError, "failed to encode response")
 			return
 		}
 	}
