@@ -12,13 +12,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-var (
-	ErrInvalidData = errors.New("invalid data")
-	ErrUnfound     = errors.New("unfound data")
-	ErrEmpty       = errors.New("storage is empty")
-	ErrConflict    = errors.New("url already exists with different value")
-)
-
 const (
 	storageMaxOpenConnections     = 5
 	storageMaxIdleConnections     = 2
@@ -80,7 +73,7 @@ func createTable(ctx context.Context, db *sql.DB) error {
 
 func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.URL) (models.URL, error) {
 	if url.ShortKey == "" || url.OriginalURL == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	dbURL := dto.FromDomain(url)
@@ -97,9 +90,9 @@ func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.URL) (m
 		if errors.Is(err, sql.ErrNoRows) {
 			existing, err := p.GetByOriginalURL(ctx, url.OriginalURL)
 			if err != nil {
-				return models.URL{}, fmt.Errorf("%w: %v", ErrConflict, err)
+				return models.URL{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
-			return existing, ErrConflict
+			return existing, models.ErrConflict
 		}
 		return models.URL{}, fmt.Errorf("database error: %w", err)
 	}
@@ -109,7 +102,7 @@ func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.URL) (m
 
 func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (models.URL, error) {
 	if shortKey == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	var result dto.URLDB
@@ -120,7 +113,7 @@ func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (m
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.URL{}, ErrUnfound
+			return models.URL{}, models.ErrUnfound
 		}
 		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
 	}
@@ -130,7 +123,7 @@ func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (m
 
 func (p *PostgresStorage) GetByOriginalURL(ctx context.Context, originalURL string) (models.URL, error) {
 	if originalURL == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	var result dto.URLDB
@@ -141,7 +134,7 @@ func (p *PostgresStorage) GetByOriginalURL(ctx context.Context, originalURL stri
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.URL{}, ErrUnfound
+			return models.URL{}, models.ErrUnfound
 		}
 		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
 	}
@@ -197,7 +190,7 @@ func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.URL) ([
 
 func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
 	if shortKey == "" {
-		return ErrInvalidData
+		return models.ErrInvalidData
 	}
 
 	result, err := p.db.ExecContext(ctx,
@@ -214,7 +207,7 @@ func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
 	}
 
 	if rowsAffected == 0 {
-		return ErrUnfound
+		return models.ErrUnfound
 	}
 
 	return nil
@@ -222,7 +215,7 @@ func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
 
 func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.URL, error) {
 	if limit <= 0 || offset < 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	rows, err := p.db.QueryContext(ctx,
@@ -269,7 +262,7 @@ func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (model
 
 func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.URL, error) {
 	if len(originalURLs) == 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	rows, err := p.db.QueryContext(ctx,

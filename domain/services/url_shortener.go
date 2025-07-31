@@ -11,13 +11,6 @@ import (
 	"urlshortener/internal/repository"
 )
 
-var (
-	ErrInvalidData = errors.New("invalid data")
-	ErrUnfound     = errors.New("unfound data")
-	ErrEmpty       = errors.New("storage is empty")
-	ErrConflict    = errors.New("url already exists with different value")
-)
-
 // URLShortener реализует бизнес-логику сервиса сокращения URL
 type URLShortener struct {
 	storage repository.Storage
@@ -35,13 +28,13 @@ func NewServiceURLShortener(storage repository.Storage, baseURL string) *URLShor
 // GetURL возвращает оригинальный URL по короткому ключу
 func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.URL, error) {
 	if shortKey == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	url, err := s.storage.GetByShortKey(ctx, shortKey)
 	if err != nil {
-		if errors.Is(err, ErrUnfound) {
-			return models.URL{}, fmt.Errorf("%w: URL not found", ErrUnfound)
+		if errors.Is(err, models.ErrUnfound) {
+			return models.URL{}, fmt.Errorf("%w: URL not found", models.ErrUnfound)
 		}
 		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
 	}
@@ -56,13 +49,13 @@ func (s *URLShortener) GetShortURL(shortKey string) string {
 // SetURL создает новую короткую ссылку или возвращает существующую
 func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (models.URL, error) {
 	if originalURL == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	// Проверяем существование URL
 	existing, err := s.storage.GetByOriginalURL(ctx, originalURL)
 	if err == nil {
-		return existing, ErrConflict
+		return existing, models.ErrConflict
 	}
 
 	// Генерируем уникальный токен
@@ -80,12 +73,12 @@ func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (models.U
 
 	createdURL, err := s.storage.CreateOrUpdate(ctx, newURL)
 	if err != nil {
-		if errors.Is(err, ErrConflict) {
+		if errors.Is(err, models.ErrConflict) {
 			existing, err := s.storage.GetByOriginalURL(ctx, originalURL)
 			if err != nil {
-				return models.URL{}, fmt.Errorf("%w: %v", ErrConflict, err)
+				return models.URL{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
-			return existing, ErrConflict
+			return existing, models.ErrConflict
 		}
 		return models.URL{}, fmt.Errorf("failed to create URL: %w", err)
 	}
@@ -96,7 +89,7 @@ func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (models.U
 // BatchCreate создает несколько коротких ссылок за одну операцию
 func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error) {
 	if len(urls) == 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	// Проверяем существующие URL
@@ -140,7 +133,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.URL) ([]mo
 
 	// Если все URL уже существуют, возвращаем конфликт
 	if allExist {
-		return result, ErrConflict
+		return result, models.ErrConflict
 	}
 
 	// Создаем новые URL
@@ -176,7 +169,7 @@ func (s *URLShortener) generateUniqueToken(ctx context.Context) (string, error) 
 		_, err := s.storage.GetByShortKey(ctx, token)
 
 		if err != nil {
-			if errors.Is(err, ErrUnfound) {
+			if errors.Is(err, models.ErrUnfound) {
 				return token, nil
 			}
 			return "", err

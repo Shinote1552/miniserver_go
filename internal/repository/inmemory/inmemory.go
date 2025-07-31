@@ -8,13 +8,6 @@ import (
 	"urlshortener/domain/models"
 )
 
-var (
-	ErrInvalidData = errors.New("invalid data")
-	ErrUnfound     = errors.New("unfound data")
-	ErrEmpty       = errors.New("storage is empty")
-	ErrConflict    = errors.New("url already exists with different value")
-)
-
 const initLastID = 0
 
 type InmemoryStorage struct {
@@ -31,18 +24,18 @@ func NewStorage() *InmemoryStorage {
 
 func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.URL) (models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	if url.ShortKey == "" || url.OriginalURL == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	if existingURL, exists := m.data[url.ShortKey]; exists {
 		if existingURL.OriginalURL == url.OriginalURL {
 			return existingURL, nil
 		}
-		return models.URL{}, ErrConflict
+		return models.URL{}, models.ErrConflict
 	}
 
 	m.lastID++
@@ -57,27 +50,27 @@ func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.URL) (m
 
 func (m *InmemoryStorage) GetByShortKey(ctx context.Context, shortKey string) (models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	if shortKey == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	url, exists := m.data[shortKey]
 	if !exists {
-		return models.URL{}, ErrUnfound
+		return models.URL{}, models.ErrUnfound
 	}
 	return url, nil
 }
 
 func (m *InmemoryStorage) GetByOriginalURL(ctx context.Context, originalURL string) (models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	if originalURL == "" {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	for _, url := range m.data {
@@ -85,12 +78,12 @@ func (m *InmemoryStorage) GetByOriginalURL(ctx context.Context, originalURL stri
 			return url, nil
 		}
 	}
-	return models.URL{}, ErrUnfound
+	return models.URL{}, models.ErrUnfound
 }
 
 func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	urls := make([]models.URL, 0, len(m.data))
@@ -107,11 +100,11 @@ func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 
 func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
 	if err := ctx.Err(); err != nil {
-		return ErrInvalidData
+		return models.ErrInvalidData
 	}
 
 	if shortKey == "" {
-		return ErrInvalidData
+		return models.ErrInvalidData
 	}
 
 	delete(m.data, shortKey)
@@ -120,17 +113,17 @@ func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
 
 func (m *InmemoryStorage) BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	if len(urls) == 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	result := make([]models.URL, 0, len(urls))
 	for _, url := range urls {
 		createdURL, err := m.CreateOrUpdate(ctx, url)
-		if err != nil && !errors.Is(err, ErrConflict) {
+		if err != nil && !errors.Is(err, models.ErrConflict) {
 			return nil, err
 		}
 		result = append(result, createdURL)
@@ -141,7 +134,7 @@ func (m *InmemoryStorage) BatchCreate(ctx context.Context, urls []models.URL) ([
 
 func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return models.URL{}, ErrInvalidData
+		return models.URL{}, models.ErrInvalidData
 	}
 
 	for _, url := range m.data {
@@ -154,11 +147,11 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 
 func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	if len(originalURLs) == 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	var result []models.URL
@@ -175,11 +168,11 @@ func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string
 
 func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models.URL, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	if limit <= 0 || offset < 0 {
-		return nil, ErrInvalidData
+		return nil, models.ErrInvalidData
 	}
 
 	allURLs := make([]models.URL, 0, len(m.data))
@@ -206,7 +199,7 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 
 func (m *InmemoryStorage) Ping(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return ErrInvalidData
+		return models.ErrInvalidData
 	}
 	return nil
 }
