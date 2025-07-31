@@ -7,10 +7,10 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"urlshortener/domain/services"
 	"urlshortener/internal/config"
 	"urlshortener/internal/logger"
 	"urlshortener/internal/server"
-	"urlshortener/internal/service"
 	"urlshortener/repository"
 	"urlshortener/repository/filestore"
 	"urlshortener/repository/inmemory"
@@ -29,8 +29,7 @@ func main() {
 
 	initData(ctxRoot, log, *cfg, storage)
 	defer saveData(ctxRoot, log, *cfg, storage)
-
-	service := service.NewServiceURLShortener(storage)
+	service := services.NewServiceURLShortener(storage)
 
 	srv, err := server.NewServer(log, *cfg, service)
 	if err != nil {

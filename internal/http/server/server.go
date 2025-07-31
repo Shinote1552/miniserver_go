@@ -12,7 +12,6 @@ import (
 	"urlshortener/internal/handlers/seturljson"
 	"urlshortener/internal/handlers/seturljsonbatch"
 	"urlshortener/internal/handlers/seturltext"
-	"urlshortener/internal/middleware"
 	"urlshortener/internal/models"
 
 	"github.com/gorilla/mux"
@@ -75,8 +74,8 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) 
 
 func (s *Server) setupRoutes() {
 
-	s.router.Use(middleware.MiddlewareLogging(s.log))
-	s.router.Use(middleware.MiddlewareCompressing())
+	s.router.Use(middlewares.MiddlewareLogging(s.log))
+	s.router.Use(middlewares.MiddlewareCompressing())
 
 	s.router.HandleFunc("/ping", getping.HandlerPing(s.svc)).Methods("GET")
 	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
