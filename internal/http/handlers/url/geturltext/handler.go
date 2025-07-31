@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"urlshortener/internal/httputils"
+	"urlshortener/domain/models"
+	"urlshortener/internal/http/httputils"
 )
 
 type ServiceURLShortener interface {
-	GetURL(ctx context.Context, token string) (string, error)
+	GetURL(ctx context.Context, shortKey string) (models.URL, error)
 }
 
 func writeTextPlainError(w http.ResponseWriter, status int, message string) {
@@ -29,7 +30,7 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Location", url)
+		w.Header().Set("Location", url.OriginalURL)
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	}
 }

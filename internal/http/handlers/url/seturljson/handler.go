@@ -4,14 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"urlshortener/internal/httputils"
-	"urlshortener/internal/models"
+	"urlshortener/domain/models"
+	"urlshortener/internal/http/dto"
+	"urlshortener/internal/http/httputils"
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, url string) (string, error)
+	SetURL(ctx context.Context, originalURL string) (models.URL, error)
 }
 
 func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
@@ -19,53 +19,43 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		ctx := r.Context()
 
 		if r.Method != http.MethodPost {
-			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputils.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
-		var req models.APIShortenRequest
+		var req dto.SingleShortenRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
+			httputils.WriteJSONError(w, http.StatusBadRequest, httputils.ErrInvalidData.Error())
 			return
 		}
 
 		if req.URL == "" {
-			writeJSONError(w, http.StatusBadRequest, models.ErrInvalidData.Error())
+			httputils.WriteJSONError(w, http.StatusBadRequest, httputils.ErrInvalidData.Error())
 			return
 		}
 
-		id, err := svc.SetURL(ctx, req.URL)
+		urlModel, err := svc.SetURL(ctx, req.URL)
 		if err != nil {
-			if errors.Is(err, models.ErrConflict) {
-				res := models.APIShortenResponse{
-					Result: buildShortURL(urlroot, id),
+			if errors.Is(err, httputils.ErrConflict) {
+				res := dto.SingleShortenResponse{
+					Result: httputils.BuildShortURL(urlroot, urlModel.ShortKey),
 				}
 				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 				w.WriteHeader(http.StatusConflict)
 				json.NewEncoder(w).Encode(res)
 				return
 			}
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			httputils.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
-		res := models.APIShortenResponse{Result: buildShortURL(urlroot, id)}
+		res := dto.SingleShortenResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortKey)}
 
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
 		if err := json.NewEncoder(w).Encode(res); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "failed to encode response")
+			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to encode response")
 			return
 		}
 	}
-}
-
-func buildShortURL(urlroot, id string) string {
-	return fmt.Sprintf("http://%s/%s", urlroot, id)
-}
-
-func writeJSONError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(models.APIErrorResponse{Error: message})
 }

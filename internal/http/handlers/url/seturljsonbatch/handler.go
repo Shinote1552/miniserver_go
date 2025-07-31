@@ -4,56 +4,46 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"urlshortener/internal/httputils"
-	"urlshortener/internal/models"
+	"urlshortener/domain/models"
+	"urlshortener/internal/http/httputils"
 )
 
 type ServiceURLShortener interface {
-	BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error)
+	BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error)
 }
 
 func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var reqBatch []models.APIShortenRequestBatch
+		var reqBatch []models.URL
 		if err := json.NewDecoder(r.Body).Decode(&reqBatch); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid request format")
+			httputils.WriteJSONError(w, http.StatusBadRequest, "invalid request format")
 			return
 		}
 
 		resBatch, err := svc.BatchCreate(ctx, reqBatch)
 		if err != nil {
-			if errors.Is(err, models.ErrConflict) {
+			if errors.Is(err, httputils.ErrConflict) {
 				for i := range resBatch {
-					resBatch[i].ShortURL = buildShortURL(urlroot, resBatch[i].ShortURL)
+					resBatch[i].ShortKey = httputils.BuildShortURL(urlroot, resBatch[i].ShortKey)
 				}
 				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 				w.WriteHeader(http.StatusConflict)
 				json.NewEncoder(w).Encode(resBatch)
 				return
 			}
-			writeJSONError(w, http.StatusInternalServerError, "failed to process batch")
+			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to process batch")
 			return
 		}
 
 		for i := range resBatch {
-			resBatch[i].ShortURL = buildShortURL(urlroot, resBatch[i].ShortURL)
+			resBatch[i].ShortKey = httputils.BuildShortURL(urlroot, resBatch[i].ShortKey)
 		}
 
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(resBatch)
 	}
-}
-func buildShortURL(urlroot, id string) string {
-	return fmt.Sprintf("http://%s/%s", urlroot, id)
-}
-
-func writeJSONError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(models.APIErrorResponse{Error: message})
 }

@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"urlshortener/internal/httputils"
+	"urlshortener/internal/http/httputils"
 )
 
 func MiddlewareCompressing() func(http.Handler) http.Handler {

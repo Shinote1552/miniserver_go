@@ -49,6 +49,10 @@ clean: db-down
 	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@echo "Cleanup complete"
 
+lines:
+	@echo "Summary code lines in this project: "
+	@find ./ -type f -exec cat {} + | wc -l
+
 # in server psql -h localhost -p 5432 -U postgres -d gpx_test
 
 # Usage examples:

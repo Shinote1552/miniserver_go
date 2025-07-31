@@ -6,176 +6,183 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"urlshortener/internal/models"
-	"urlshortener/repository"
+	"time"
+	"urlshortener/domain/models"
+	"urlshortener/internal/repository"
 )
 
+var (
+	ErrInvalidData = errors.New("invalid data")
+	ErrUnfound     = errors.New("unfound data")
+	ErrEmpty       = errors.New("storage is empty")
+	ErrConflict    = errors.New("url already exists with different value")
+)
+
+// URLShortener реализует бизнес-логику сервиса сокращения URL
 type URLShortener struct {
 	storage repository.Storage
+	baseURL string
 }
 
-func NewServiceURLShortener(storage repository.Storage) *URLShortener {
-	return &URLShortener{storage: storage}
+// NewServiceURLShortener создает новый экземпляр сервиса
+func NewServiceURLShortener(storage repository.Storage, baseURL string) *URLShortener {
+	return &URLShortener{
+		storage: storage,
+		baseURL: baseURL,
+	}
 }
 
-func (s *URLShortener) GetURL(ctx context.Context, shortURL string) (string, error) {
-	urlModel, err := s.storage.GetByShortURL(ctx, shortURL)
+// GetURL возвращает оригинальный URL по короткому ключу
+func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.URL, error) {
+	if shortKey == "" {
+		return models.URL{}, ErrInvalidData
+	}
+
+	url, err := s.storage.GetByShortKey(ctx, shortKey)
 	if err != nil {
-		if errors.Is(err, models.ErrUnfound) {
-			return "", models.ErrUnfound
+		if errors.Is(err, ErrUnfound) {
+			return models.URL{}, fmt.Errorf("%w: URL not found", ErrUnfound)
 		}
-		return "", err
+		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
 	}
-	return urlModel.OriginalURL, nil
+	return url, nil
 }
-func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (string, error) {
-	// Сначала проверяем существование URL
-	existing, err := s.storage.GetByOriginalURL(ctx, originalURL)
-	if err == nil && existing != nil {
-		return existing.ShortURL, models.ErrConflict
+
+// GetShortURL возвращает полный короткий URL
+func (s *URLShortener) GetShortURL(shortKey string) string {
+	return fmt.Sprintf("%s/%s", s.baseURL, shortKey)
+}
+
+// SetURL создает новую короткую ссылку или возвращает существующую
+func (s *URLShortener) SetURL(ctx context.Context, originalURL string) (models.URL, error) {
+	if originalURL == "" {
+		return models.URL{}, ErrInvalidData
 	}
 
+	// Проверяем существование URL
+	existing, err := s.storage.GetByOriginalURL(ctx, originalURL)
+	if err == nil {
+		return existing, ErrConflict
+	}
+
+	// Генерируем уникальный токен
 	token, err := s.generateUniqueToken(ctx)
 	if err != nil {
-		return "", err
+		return models.URL{}, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	_, err = s.storage.CreateOrUpdate(ctx, token, originalURL)
+	// Создаем новую запись
+	newURL := models.URL{
+		OriginalURL: originalURL,
+		ShortKey:    token,
+		CreatedAt:   time.Now(),
+	}
+
+	createdURL, err := s.storage.CreateOrUpdate(ctx, newURL)
 	if err != nil {
-		if errors.Is(err, models.ErrConflict) {
+		if errors.Is(err, ErrConflict) {
 			existing, err := s.storage.GetByOriginalURL(ctx, originalURL)
 			if err != nil {
-				return "", fmt.Errorf("%w: %v", models.ErrConflict, err)
+				return models.URL{}, fmt.Errorf("%w: %v", ErrConflict, err)
 			}
-			return existing.ShortURL, models.ErrConflict
+			return existing, ErrConflict
 		}
-		return "", err
+		return models.URL{}, fmt.Errorf("failed to create URL: %w", err)
 	}
 
-	return token, nil
+	return createdURL, nil
 }
 
-func (s *URLShortener) BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error) {
-	if len(batchItems) == 0 {
-		return nil, fmt.Errorf("%w: empty batch", models.ErrInvalidData)
-	}
-
-	// Валидация элементов
-	for _, item := range batchItems {
-		if item.CorrelationID == "" || item.OriginalURL == "" {
-			return nil, fmt.Errorf("%w: correlation_id и original_url обязательны", models.ErrInvalidData)
-		}
+// BatchCreate создает несколько коротких ссылок за одну операцию
+func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error) {
+	if len(urls) == 0 {
+		return nil, ErrInvalidData
 	}
 
 	// Проверяем существующие URL
-	existingURLs, err := s.storage.ExistsBatch(ctx, getOriginalURLs(batchItems))
+	originalURLs := make([]string, len(urls))
+	for i, url := range urls {
+		originalURLs[i] = url.OriginalURL
+	}
+
+	existingURLs, err := s.storage.ExistsBatch(ctx, originalURLs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing URLs: %w", err)
 	}
 
-	existingMap := make(map[string]string)
+	existingMap := make(map[string]models.URL)
 	for _, url := range existingURLs {
-		existingMap[url.OriginalURL] = url.ShortURL
+		existingMap[url.OriginalURL] = url
 	}
 
 	var (
-		itemsToCreate []models.APIShortenRequestBatch
-		response      []models.APIShortenResponseBatch
-		allExist      = true
+		urlsToCreate []models.URL
+		result       []models.URL
+		allExist     = true
 	)
 
-	// Формируем ответ для существующих URL
-	for _, item := range batchItems {
-		if shortURL, exists := existingMap[item.OriginalURL]; exists {
-			response = append(response, models.APIShortenResponseBatch{
-				CorrelationID: item.CorrelationID,
-				ShortURL:      shortURL,
-			})
+	// Формируем результат для существующих URL
+	for _, url := range urls {
+		if existingURL, exists := existingMap[url.OriginalURL]; exists {
+			result = append(result, existingURL)
 		} else {
-			itemsToCreate = append(itemsToCreate, item)
+			// Генерируем короткий ключ для новых URL
+			token, err := s.generateUniqueToken(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate token: %w", err)
+			}
+			url.ShortKey = token
+			url.CreatedAt = time.Now()
+			urlsToCreate = append(urlsToCreate, url)
 			allExist = false
 		}
 	}
 
 	// Если все URL уже существуют, возвращаем конфликт
 	if allExist {
-		return response, models.ErrConflict
+		return result, ErrConflict
 	}
 
 	// Создаем новые URL
-	newItems, err := s.createNewBatchItems(ctx, itemsToCreate)
+	createdURLs, err := s.storage.BatchCreate(ctx, urlsToCreate)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create URLs: %w", err)
 	}
 
-	return append(response, newItems...), nil
+	return append(result, createdURLs...), nil
 }
 
-func getOriginalURLs(items []models.APIShortenRequestBatch) []string {
-	urls := make([]string, len(items))
-	for i, item := range items {
-		urls[i] = item.OriginalURL
-	}
-	return urls
-}
-
-func (s *URLShortener) createNewBatchItems(ctx context.Context, items []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error) {
-	tokenToCorrelation := make(map[string]string)
-	var storageBatch []models.APIShortenRequestBatch
-
-	for _, item := range items {
-		token, err := s.generateUniqueToken(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate token: %w", err)
-		}
-		tokenToCorrelation[token] = item.CorrelationID
-		storageBatch = append(storageBatch, models.APIShortenRequestBatch{
-			CorrelationID: token,
-			OriginalURL:   item.OriginalURL,
-		})
-	}
-
-	createdItems, err := s.storage.BatchCreate(ctx, storageBatch)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create batch in storage: %w", err)
-	}
-
-	result := make([]models.APIShortenResponseBatch, len(createdItems))
-	for i, item := range createdItems {
-		result[i] = models.APIShortenResponseBatch{
-			CorrelationID: tokenToCorrelation[item.CorrelationID],
-			ShortURL:      item.ShortURL,
-		}
-	}
-
-	return result, nil
-}
-
+// PingDataBase проверяет соединение с хранилищем
 func (s *URLShortener) PingDataBase(ctx context.Context) error {
-	return s.storage.Ping(ctx)
+	if err := s.storage.Ping(ctx); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+	return nil
 }
 
-func (s *URLShortener) ListURLs(ctx context.Context, limit, offset int) ([]models.StorageURLModel, error) {
+func (s *URLShortener) ListURLs(ctx context.Context, limit, offset int) ([]models.URL, error) {
 	return s.storage.List(ctx, limit, offset)
 }
 
 const (
+	maxAttempts  = 3
 	tokenLength  = 8
 	tokenLetters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
 func (s *URLShortener) generateUniqueToken(ctx context.Context) (string, error) {
-	const maxAttempts = 3
 	for i := 0; i < maxAttempts; i++ {
 		token := generateRandomToken()
-		_, err := s.storage.GetByShortURL(ctx, token)
+		_, err := s.storage.GetByShortKey(ctx, token)
+
 		if err != nil {
-			if errors.Is(err, models.ErrUnfound) {
+			if errors.Is(err, ErrUnfound) {
 				return token, nil
 			}
 			return "", err
 		}
 	}
+
 	return "", errors.New("failed to generate unique token after several attempts")
 }
 

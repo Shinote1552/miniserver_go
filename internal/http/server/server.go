@@ -5,24 +5,25 @@ import (
 	"errors"
 	"net/http"
 	"time"
+	"urlshortener/domain/models"
 	"urlshortener/internal/config"
-	"urlshortener/internal/handlers/getdefault"
-	"urlshortener/internal/handlers/getping"
-	"urlshortener/internal/handlers/geturltext"
-	"urlshortener/internal/handlers/seturljson"
-	"urlshortener/internal/handlers/seturljsonbatch"
-	"urlshortener/internal/handlers/seturltext"
-	"urlshortener/internal/models"
+	"urlshortener/internal/http/handlers/middlewares"
+	"urlshortener/internal/http/handlers/system/getping"
+	"urlshortener/internal/http/handlers/url/getdefault"
+	"urlshortener/internal/http/handlers/url/geturltext"
+	"urlshortener/internal/http/handlers/url/seturljson"
+	"urlshortener/internal/http/handlers/url/seturljsonbatch"
+	"urlshortener/internal/http/handlers/url/seturltext"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 )
 
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
-type URLServiceShortener interface {
-	GetURL(context.Context, string) (string, error)
-	SetURL(context.Context, string) (string, error)
-	BatchCreate(ctx context.Context, batchItems []models.APIShortenRequestBatch) ([]models.APIShortenResponseBatch, error)
+type URLShortener interface {
+	GetURL(context.Context, string) (models.URL, error)
+	SetURL(context.Context, string) (models.URL, error)
+	BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error)
 	PingDataBase(context.Context) error
 }
 
@@ -30,11 +31,11 @@ type Server struct {
 	httpServer *http.Server
 	router     *mux.Router
 	log        *zerolog.Logger
-	svc        URLServiceShortener
+	svc        URLShortener
 	cfg        config.Config
 }
 
-func NewServer(log *zerolog.Logger, cfg config.Config, svc URLServiceShortener) (*Server, error) {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener) (*Server, error) {
 
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и

@@ -3,7 +3,7 @@ package getdefault
 import (
 	"fmt"
 	"net/http"
-	"urlshortener/internal/httputils"
+	"urlshortener/internal/http/httputils"
 )
 
 func HandlerGetDefault() http.HandlerFunc {

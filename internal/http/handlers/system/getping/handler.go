@@ -3,7 +3,7 @@ package getping
 import (
 	"context"
 	"net/http"
-	"urlshortener/internal/httputils"
+	"urlshortener/internal/http/httputils"
 )
 
 type Service interface {

@@ -9,12 +9,12 @@ import (
 	"time"
 	"urlshortener/domain/services"
 	"urlshortener/internal/config"
+	"urlshortener/internal/http/server"
 	"urlshortener/internal/logger"
-	"urlshortener/internal/server"
-	"urlshortener/repository"
-	"urlshortener/repository/filestore"
-	"urlshortener/repository/inmemory"
-	"urlshortener/repository/postgres"
+	"urlshortener/internal/repository"
+	"urlshortener/internal/repository/filestore"
+	"urlshortener/internal/repository/inmemory"
+	"urlshortener/internal/repository/postgres"
 
 	"github.com/rs/zerolog"
 )
@@ -29,7 +29,7 @@ func main() {
 
 	initData(ctxRoot, log, *cfg, storage)
 	defer saveData(ctxRoot, log, *cfg, storage)
-	service := services.NewServiceURLShortener(storage)
+	service := services.NewServiceURLShortener(storage, cfg.BaseURL)
 
 	srv, err := server.NewServer(log, *cfg, service)
 	if err != nil {

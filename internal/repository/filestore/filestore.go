@@ -9,9 +9,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"urlshortener/internal/models"
+	"urlshortener/domain/models"
 
 	"github.com/rs/zerolog"
+)
+
+var (
+	ErrInvalidData = errors.New("invalid data")
+	ErrUnfound     = errors.New("unfound data")
+	ErrEmpty       = errors.New("storage is empty")
+	ErrConflict    = errors.New("url already exists with different value")
 )
 
 var (
@@ -37,9 +44,9 @@ var (
 
 // StorageInterface - ограниченный интерфейс для работы с filestore
 type StorageInterface interface {
-	CreateOrUpdate(ctx context.Context, shortURL, originalURL string) (*models.StorageURLModel, error)
-	GetByShortURL(ctx context.Context, shortURL string) (*models.StorageURLModel, error)
-	List(ctx context.Context, limit, offset int) ([]models.StorageURLModel, error)
+	CreateOrUpdate(ctx context.Context, url models.URL) (models.URL, error)
+	GetByShortKey(ctx context.Context, shortKey string) (models.URL, error)
+	List(ctx context.Context, limit, offset int) ([]models.URL, error)
 }
 
 // Load loads URLs from file into storage
@@ -190,14 +197,14 @@ func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterf
 	return loadedCount, nil
 }
 
-func storeURL(ctx context.Context, url *models.StorageURLModel, storage StorageInterface, log zerolog.Logger) error {
-	_, err := storage.CreateOrUpdate(ctx, url.ShortURL, url.OriginalURL)
+func storeURL(ctx context.Context, url *models.URL, storage StorageInterface, log zerolog.Logger) error {
+	_, err := storage.CreateOrUpdate(ctx, *url)
 	if err == nil {
 		return nil
 	}
 
-	if errors.Is(err, models.ErrConflict) {
-		log.Info().Str("short_url", url.ShortURL).Msg("Skipping duplicate URL")
+	if errors.Is(err, ErrConflict) {
+		log.Info().Str("short_url", url.ShortKey).Msg("Skipping duplicate URL")
 		return nil
 	}
 
@@ -272,7 +279,7 @@ func newFileWriter(filePath string) (*fileWriter, error) {
 	}, nil
 }
 
-func (w *fileWriter) writeURL(url *models.StorageURLModel) error {
+func (w *fileWriter) writeURL(url *models.URL) error {
 	data, err := json.Marshal(url)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMarshalURL, err)
@@ -317,7 +324,7 @@ func newFileReader(filePath string) (*fileReader, error) {
 	}, nil
 }
 
-func (r *fileReader) readURL() (*models.StorageURLModel, error) {
+func (r *fileReader) readURL() (*models.URL, error) {
 	data, err := r.reader.ReadBytes('\n')
 	if err != nil {
 		if err == io.EOF && len(data) == 0 {
@@ -326,7 +333,7 @@ func (r *fileReader) readURL() (*models.StorageURLModel, error) {
 		return nil, fmt.Errorf("%w: %v", ErrReadURL, err)
 	}
 
-	var url models.StorageURLModel
+	var url models.URL
 	if err := json.Unmarshal(data, &url); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnmarshalURL, err)
 	}
