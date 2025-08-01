@@ -11,7 +11,7 @@ import (
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, originalURL string) (models.URL, error)
+	SetURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
 }
 
 func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
@@ -38,7 +38,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		if err != nil {
 			if errors.Is(err, httputils.ErrConflict) {
 				res := dto.SingleShortenResponse{
-					Result: httputils.BuildShortURL(urlroot, urlModel.ShortKey),
+					Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode),
 				}
 				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 				w.WriteHeader(http.StatusConflict)
@@ -49,7 +49,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		res := dto.SingleShortenResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortKey)}
+		res := dto.SingleShortenResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode)}
 
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)

@@ -21,9 +21,9 @@ import (
 
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
 type URLShortener interface {
-	GetURL(context.Context, string) (models.URL, error)
-	SetURL(context.Context, string) (models.URL, error)
-	BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error)
+	GetURL(context.Context, string) (models.ShortenedLink, error)
+	SetURL(context.Context, string) (models.ShortenedLink, error)
+	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	PingDataBase(context.Context) error
 }
 

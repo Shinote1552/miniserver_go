@@ -44,9 +44,9 @@ var (
 
 // StorageInterface - ограниченный интерфейс для работы с filestore
 type StorageInterface interface {
-	CreateOrUpdate(ctx context.Context, url models.URL) (models.URL, error)
-	GetByShortKey(ctx context.Context, shortKey string) (models.URL, error)
-	List(ctx context.Context, limit, offset int) ([]models.URL, error)
+	CreateOrUpdate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error)
+	GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
+	List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error)
 }
 
 // Load loads URLs from file into storage
@@ -197,14 +197,14 @@ func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterf
 	return loadedCount, nil
 }
 
-func storeURL(ctx context.Context, url *models.URL, storage StorageInterface, log zerolog.Logger) error {
+func storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInterface, log zerolog.Logger) error {
 	_, err := storage.CreateOrUpdate(ctx, *url)
 	if err == nil {
 		return nil
 	}
 
 	if errors.Is(err, ErrConflict) {
-		log.Info().Str("short_url", url.ShortKey).Msg("Skipping duplicate URL")
+		log.Info().Str("short_url", url.ShortCode).Msg("Skipping duplicate URL")
 		return nil
 	}
 
@@ -279,7 +279,7 @@ func newFileWriter(filePath string) (*fileWriter, error) {
 	}, nil
 }
 
-func (w *fileWriter) writeURL(url *models.URL) error {
+func (w *fileWriter) writeURL(url *models.ShortenedLink) error {
 	data, err := json.Marshal(url)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMarshalURL, err)
@@ -324,7 +324,7 @@ func newFileReader(filePath string) (*fileReader, error) {
 	}, nil
 }
 
-func (r *fileReader) readURL() (*models.URL, error) {
+func (r *fileReader) readURL() (*models.ShortenedLink, error) {
 	data, err := r.reader.ReadBytes('\n')
 	if err != nil {
 		if err == io.EOF && len(data) == 0 {
@@ -333,7 +333,7 @@ func (r *fileReader) readURL() (*models.URL, error) {
 		return nil, fmt.Errorf("%w: %v", ErrReadURL, err)
 	}
 
-	var url models.URL
+	var url models.ShortenedLink
 	if err := json.Unmarshal(data, &url); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnmarshalURL, err)
 	}

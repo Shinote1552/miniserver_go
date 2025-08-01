@@ -71,9 +71,9 @@ func createTable(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.URL) (models.URL, error) {
-	if url.ShortKey == "" || url.OriginalURL == "" {
-		return models.URL{}, models.ErrInvalidData
+func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
+	if url.ShortCode == "" || url.LongURL == "" {
+		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
 	dbURL := dto.FromDomain(url)
@@ -83,66 +83,66 @@ func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.URL) (m
         VALUES ($1, $2, $3)
         ON CONFLICT (original_url) DO NOTHING
         RETURNING id, short_key, original_url, created_at`,
-		dbURL.ShortKey, dbURL.OriginalURL, dbURL.CreatedAt,
-	).Scan(&result.ID, &result.ShortKey, &result.OriginalURL, &result.CreatedAt)
+		dbURL.ShortCode, dbURL.LongURL, dbURL.CreatedAt,
+	).Scan(&result.ID, &result.ShortCode, &result.LongURL, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			existing, err := p.GetByOriginalURL(ctx, url.OriginalURL)
+			existing, err := p.GetByLongURL(ctx, url.LongURL)
 			if err != nil {
-				return models.URL{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
+				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
 			return existing, models.ErrConflict
 		}
-		return models.URL{}, fmt.Errorf("database error: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("database error: %w", err)
 	}
 
 	return *result.ToDomain(), nil
 }
 
-func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (models.URL, error) {
+func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
 	if shortKey == "" {
-		return models.URL{}, models.ErrInvalidData
+		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
 	var result dto.URLDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE short_key = $1",
 		shortKey,
-	).Scan(&result.ID, &result.ShortKey, &result.OriginalURL, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.LongURL, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.URL{}, models.ErrUnfound
+			return models.ShortenedLink{}, models.ErrUnfound
 		}
-		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
 
 	return *result.ToDomain(), nil
 }
 
-func (p *PostgresStorage) GetByOriginalURL(ctx context.Context, originalURL string) (models.URL, error) {
+func (p *PostgresStorage) GetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	if originalURL == "" {
-		return models.URL{}, models.ErrInvalidData
+		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
 	var result dto.URLDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&result.ID, &result.ShortKey, &result.OriginalURL, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.LongURL, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.URL{}, models.ErrUnfound
+			return models.ShortenedLink{}, models.ErrUnfound
 		}
-		return models.URL{}, fmt.Errorf("failed to get URL: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
 
 	return *result.ToDomain(), nil
 }
 
-func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.URL) ([]models.URL, error) {
+func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -159,16 +159,16 @@ func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.URL) ([
 	}
 	defer stmt.Close()
 
-	var result []models.URL
+	var result []models.ShortenedLink
 	for _, url := range urls {
 		var dbURL dto.URLDB
-		err := stmt.QueryRowContext(ctx, url.ShortKey, url.OriginalURL, url.CreatedAt).Scan(
-			&dbURL.ID, &dbURL.ShortKey, &dbURL.OriginalURL, &dbURL.CreatedAt,
+		err := stmt.QueryRowContext(ctx, url.ShortCode, url.LongURL, url.CreatedAt).Scan(
+			&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt,
 		)
 
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				existing, err := p.GetByOriginalURL(ctx, url.OriginalURL)
+				existing, err := p.GetByLongURL(ctx, url.LongURL)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get existing URL: %w", err)
 				}
@@ -213,7 +213,7 @@ func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
 	return nil
 }
 
-func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.URL, error) {
+func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error) {
 	if limit <= 0 || offset < 0 {
 		return nil, models.ErrInvalidData
 	}
@@ -227,10 +227,10 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	}
 	defer rows.Close()
 
-	var urls []models.URL
+	var urls []models.ShortenedLink
 	for rows.Next() {
 		var dbURL dto.URLDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortKey, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
 		urls = append(urls, *dbURL.ToDomain())
@@ -243,24 +243,24 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	return urls, nil
 }
 
-func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (models.URL, error) {
+func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	var dbURL dto.URLDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&dbURL.ID, &dbURL.ShortKey, &dbURL.OriginalURL, &dbURL.CreatedAt)
+	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return models.URL{}, nil
+			return models.ShortenedLink{}, nil
 		}
-		return models.URL{}, fmt.Errorf("failed to check URL existence: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("failed to check URL existence: %w", err)
 	}
 
 	return *dbURL.ToDomain(), nil
 }
 
-func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.URL, error) {
+func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error) {
 	if len(originalURLs) == 0 {
 		return nil, models.ErrInvalidData
 	}
@@ -274,10 +274,10 @@ func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string
 	}
 	defer rows.Close()
 
-	var result []models.URL
+	var result []models.ShortenedLink
 	for rows.Next() {
 		var dbURL dto.URLDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortKey, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
 		result = append(result, *dbURL.ToDomain())
@@ -297,7 +297,7 @@ func (p *PostgresStorage) Close() error {
 	return p.db.Close()
 }
 
-func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
+func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
 	rows, err := p.db.QueryContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls")
 	if err != nil {
@@ -305,10 +305,10 @@ func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.URL, error) {
 	}
 	defer rows.Close()
 
-	var urls []models.URL
+	var urls []models.ShortenedLink
 	for rows.Next() {
 		var dbURL dto.URLDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortKey, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
 		urls = append(urls, *dbURL.ToDomain())

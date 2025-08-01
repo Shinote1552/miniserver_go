@@ -10,7 +10,7 @@ import (
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, originalURL string) (models.URL, error)
+	SetURL(ctx context.Context, longUrl string) (models.ShortenedLink, error)
 }
 
 func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
@@ -35,7 +35,7 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			if errors.Is(err, httputils.ErrConflict) {
 				w.Header().Set("Content-Type", httputils.MIMETextPlain)
 				w.WriteHeader(http.StatusConflict)
-				w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortKey)))
+				w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortCode)))
 				return
 			}
 			httputils.WriteTextError(w, http.StatusBadRequest, err.Error())
@@ -44,6 +44,6 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 
 		w.Header().Set("Content-Type", httputils.MIMETextPlain)
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortKey)))
+		w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortCode)))
 	}
 }

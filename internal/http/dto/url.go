@@ -12,7 +12,7 @@ type (
 
 	BatchShortenRequest struct {
 		CorrelationID string `json:"correlation_id"`
-		OriginalURL   string `json:"original_url"`
+		LongURL       string `json:"original_url"`
 	}
 )
 
@@ -33,35 +33,35 @@ type (
 )
 
 // Request → Domain
-func (r *SingleShortenRequest) ToDomain() models.URL {
-	return models.URL{
-		OriginalURL: r.URL,
+func (r *SingleShortenRequest) ToDomain() models.ShortenedLink {
+	return models.ShortenedLink{
+		LongURL: r.URL,
 	}
 }
 
-func BatchRequestsToDomains(reqs []BatchShortenRequest) []models.URL {
-	urls := make([]models.URL, len(reqs))
+func BatchRequestsToDomains(reqs []BatchShortenRequest) []models.ShortenedLink {
+	urls := make([]models.ShortenedLink, len(reqs))
 	for i, r := range reqs {
-		urls[i] = models.URL{
-			OriginalURL: r.OriginalURL,
+		urls[i] = models.ShortenedLink{
+			LongURL: r.LongURL,
 		}
 	}
 	return urls
 }
 
 // Domain → Response
-func DomainToSingleResponse(url models.URL, baseURL string) SingleShortenResponse {
+func DomainToSingleResponse(url models.ShortenedLink, baseURL string) SingleShortenResponse {
 	return SingleShortenResponse{
-		Result: baseURL + "/" + url.ShortKey,
+		Result: baseURL + "/" + url.ShortCode,
 	}
 }
 
-func DomainsToBatchResponse(urls []models.URL, baseURL string) []BatchShortenResponse {
+func DomainsToBatchResponse(urls []models.ShortenedLink, baseURL string) []BatchShortenResponse {
 	responses := make([]BatchShortenResponse, len(urls))
 	for i, url := range urls {
 		responses[i] = BatchShortenResponse{
 			CorrelationID: "",
-			ShortURL:      baseURL + "/" + url.ShortKey,
+			ShortURL:      baseURL + "/" + url.ShortCode,
 		}
 	}
 	return responses
