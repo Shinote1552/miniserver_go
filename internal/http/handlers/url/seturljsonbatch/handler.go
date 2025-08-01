@@ -24,25 +24,31 @@ func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 			return
 		}
 
-		// Convert DTO to domain models
-		urls := make([]models.URL, len(reqBatch))
-		for i, req := range reqBatch {
-			urls[i] = models.URL{
+		// сопостовляем по OriginalURL и сохроняем порядок: corelation_id/url - corelation_id/key
+		reqMap := make(map[string]dto.BatchShortenRequest, len(reqBatch))
+		urls := make([]models.URL, 0, len(reqBatch))
+
+		for _, req := range reqBatch {
+			reqMap[req.OriginalURL] = req
+			urls = append(urls, models.URL{
 				OriginalURL: req.OriginalURL,
-				// Здесь можно сохранить correlation_id если нужно
-			}
+			})
 		}
 
-		resBatch, err := svc.BatchCreate(ctx, urls)
+		createdURLs, err := svc.BatchCreate(ctx, urls)
 		if err != nil {
-			if errors.Is(err, httputils.ErrConflict) {
-				response := make([]dto.BatchShortenResponse, len(resBatch))
-				for i, url := range resBatch {
-					response[i] = dto.BatchShortenResponse{
-						CorrelationID: reqBatch[i].CorrelationID, // Сохраняем оригинальный ID
-						ShortURL:      httputils.BuildShortURL(urlroot, url.ShortKey),
+			if errors.Is(err, models.ErrConflict) {
+				response := make([]dto.BatchShortenResponse, 0, len(reqBatch))
+
+				for _, url := range createdURLs {
+					if req, exists := reqMap[url.OriginalURL]; exists {
+						response = append(response, dto.BatchShortenResponse{
+							CorrelationID: req.CorrelationID,
+							ShortURL:      httputils.BuildShortURL(urlroot, url.ShortKey),
+						})
 					}
 				}
+
 				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 				w.WriteHeader(http.StatusConflict)
 				json.NewEncoder(w).Encode(response)
@@ -52,11 +58,14 @@ func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 			return
 		}
 
-		response := make([]dto.BatchShortenResponse, len(resBatch))
-		for i, url := range resBatch {
-			response[i] = dto.BatchShortenResponse{
-				CorrelationID: reqBatch[i].CorrelationID,
-				ShortURL:      httputils.BuildShortURL(urlroot, url.ShortKey),
+		// Формируем ответ
+		response := make([]dto.BatchShortenResponse, 0, len(reqBatch))
+		for _, url := range createdURLs {
+			if req, exists := reqMap[url.OriginalURL]; exists {
+				response = append(response, dto.BatchShortenResponse{
+					CorrelationID: req.CorrelationID,
+					ShortURL:      httputils.BuildShortURL(urlroot, url.ShortKey),
+				})
 			}
 		}
 

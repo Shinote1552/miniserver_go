@@ -34,3 +34,6 @@ func FromDomain(url models.URL) *URLDB {
 		CreatedAt:   url.CreatedAt,
 	}
 }
+
+
+
