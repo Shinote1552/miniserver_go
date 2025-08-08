@@ -11,6 +11,7 @@ type (
 		ID        int       `db:"id"`
 		LongURL   string    `db:"original_url"`
 		ShortCode string    `db:"short_key"`
+		UserToken string    `db:"user_token_hash"`
 		CreatedAt time.Time `db:"created_at"`
 	}
 )
@@ -21,6 +22,7 @@ func (d *URLDB) ToDomain() *models.ShortenedLink {
 		ID:        d.ID,
 		LongURL:   d.LongURL,
 		ShortCode: d.ShortCode,
+		UserToken: d.UserToken,
 		CreatedAt: d.CreatedAt,
 	}
 }
@@ -31,6 +33,7 @@ func FromDomain(url models.ShortenedLink) *URLDB {
 		ID:        url.ID,
 		LongURL:   url.LongURL,
 		ShortCode: url.ShortCode,
+		UserToken: url.UserToken,
 		CreatedAt: url.CreatedAt,
 	}
 }

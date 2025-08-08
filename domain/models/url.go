@@ -7,9 +7,10 @@ import (
 
 type (
 	ShortenedLink struct {
-		ID        int
-		LongURL   string
-		ShortCode string
+		ID        int    // Уникальный идентификатор в БД
+		LongURL   string // Оригинальный URL в изначальном виде
+		ShortCode string // Короткий код (aBcD12) - сокращенный URL
+		UserToken string // хэш сумма JWT подписи выданная пользователю
 		CreatedAt time.Time
 	}
 )
