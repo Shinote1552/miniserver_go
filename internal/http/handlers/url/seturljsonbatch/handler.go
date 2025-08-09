@@ -18,14 +18,14 @@ func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		var requestBatch []dto.BatchShortenRequest
+		var requestBatch []dto.ShortenedLinkBatchRequest
 		if err := json.NewDecoder(r.Body).Decode(&requestBatch); err != nil {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "invalid request format")
 			return
 		}
 
 		// сопостовляем по OriginalURL и сохроняем порядок corelation_id: corelation_id/url - corelation_id/key
-		requestMap := make(map[string]dto.BatchShortenRequest, len(requestBatch))
+		requestMap := make(map[string]dto.ShortenedLinkBatchRequest, len(requestBatch))
 		urls := make([]models.ShortenedLink, 0, len(requestBatch))
 
 		for _, req := range requestBatch {

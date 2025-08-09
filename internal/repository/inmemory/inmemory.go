@@ -12,7 +12,7 @@ const initLastID = 0
 
 type InmemoryStorage struct {
 	data   map[string]models.ShortenedLink
-	lastID int
+	lastID int64
 }
 
 func NewStorage() *InmemoryStorage {

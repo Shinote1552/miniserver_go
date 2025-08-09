@@ -23,7 +23,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		var req dto.SingleShortenRequest
+		var req dto.ShortenedLinkSingleRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputils.WriteJSONError(w, http.StatusBadRequest, httputils.ErrInvalidData.Error())
 			return
@@ -37,7 +37,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		urlModel, err := svc.SetURL(ctx, req.URL)
 		if err != nil {
 			if errors.Is(err, httputils.ErrConflict) {
-				res := dto.SingleShortenResponse{
+				res := dto.ShortenedLinkSingleResponse{
 					Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode),
 				}
 				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
@@ -49,7 +49,7 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		res := dto.SingleShortenResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode)}
+		res := dto.ShortenedLinkSingleResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode)}
 
 		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
 		w.WriteHeader(http.StatusCreated)

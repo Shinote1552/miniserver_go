@@ -6,11 +6,17 @@ import (
 )
 
 type (
+	User struct {
+		ID        int64
+		UUID      string // уникальная ID строка crypto/rand
+		CreatedAt time.Time
+	}
+
 	ShortenedLink struct {
-		ID        int    // Уникальный идентификатор в БД
+		ID        int64  // Уникальный идентификатор в БД
 		LongURL   string // Оригинальный URL в изначальном виде
 		ShortCode string // Короткий код (aBcD12) - сокращенный URL
-		UserToken string // хэш сумма JWT подписи выданная пользователю
+		UserID    int64  // хэш сумма JWT подписи выданная пользователю
 		CreatedAt time.Time
 	}
 )

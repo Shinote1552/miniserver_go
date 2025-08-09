@@ -6,11 +6,11 @@ import (
 
 // Request
 type (
-	SingleShortenRequest struct {
+	ShortenedLinkSingleRequest struct {
 		URL string `json:"url"`
 	}
 
-	BatchShortenRequest struct {
+	ShortenedLinkBatchRequest struct {
 		CorrelationID string `json:"correlation_id"`
 		LongURL       string `json:"original_url"`
 	}
@@ -18,7 +18,7 @@ type (
 
 // Response
 type (
-	SingleShortenResponse struct {
+	ShortenedLinkSingleResponse struct {
 		Result string `json:"result"`
 	}
 
@@ -33,13 +33,13 @@ type (
 )
 
 // Request → Domain
-func (r *SingleShortenRequest) ToDomain() models.ShortenedLink {
+func SingleShortenedLinkRequestToDomain(r ShortenedLinkSingleRequest) models.ShortenedLink {
 	return models.ShortenedLink{
 		LongURL: r.URL,
 	}
 }
 
-func BatchRequestsToDomains(reqs []BatchShortenRequest) []models.ShortenedLink {
+func BatchRequestsToDomains(reqs []ShortenedLinkBatchRequest) []models.ShortenedLink {
 	urls := make([]models.ShortenedLink, len(reqs))
 	for i, r := range reqs {
 		urls[i] = models.ShortenedLink{
@@ -50,8 +50,8 @@ func BatchRequestsToDomains(reqs []BatchShortenRequest) []models.ShortenedLink {
 }
 
 // Domain → Response
-func DomainToSingleResponse(url models.ShortenedLink, baseURL string) SingleShortenResponse {
-	return SingleShortenResponse{
+func DomainToSingleResponse(url models.ShortenedLink, baseURL string) ShortenedLinkSingleResponse {
+	return ShortenedLinkSingleResponse{
 		Result: baseURL + "/" + url.ShortCode,
 	}
 }

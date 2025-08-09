@@ -16,7 +16,9 @@ type (
 
 		// Пакетные операции
 		BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-		BatchGetByUserID(ctx context.Context, userid ) ([]models.ShortenedLink, error)
+
+		// BatchGetByUserID(ctx context.Context, UUID string) ([]models.ShortenedLink, error)
+
 		ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 
 		Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error)

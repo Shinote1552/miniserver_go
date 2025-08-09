@@ -75,9 +75,8 @@ func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.Shorten
 	if url.ShortCode == "" || url.LongURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
-
-	dbURL := dto.FromDomain(url)
-	var result dto.URLDB
+	dbURL := dto.ShortenedLinkDBFromDomain(url)
+	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx, `
         INSERT INTO urls (short_key, original_url, created_at)
         VALUES ($1, $2, $3)
@@ -97,7 +96,7 @@ func (p *PostgresStorage) CreateOrUpdate(ctx context.Context, url models.Shorten
 		return models.ShortenedLink{}, fmt.Errorf("database error: %w", err)
 	}
 
-	return *result.ToDomain(), nil
+	return dto.ShortenedLinkDBToDomain(result), nil
 }
 
 func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
@@ -105,7 +104,7 @@ func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (m
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	var result dto.URLDB
+	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE short_key = $1",
 		shortKey,
@@ -118,7 +117,7 @@ func (p *PostgresStorage) GetByShortKey(ctx context.Context, shortKey string) (m
 		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
 
-	return *result.ToDomain(), nil
+	return dto.ShortenedLinkDBToDomain(result), nil
 }
 
 func (p *PostgresStorage) GetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
@@ -126,7 +125,7 @@ func (p *PostgresStorage) GetByLongURL(ctx context.Context, originalURL string) 
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	var result dto.URLDB
+	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
 		originalURL,
@@ -139,7 +138,7 @@ func (p *PostgresStorage) GetByLongURL(ctx context.Context, originalURL string) 
 		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
 
-	return *result.ToDomain(), nil
+	return dto.ShortenedLinkDBToDomain(result), nil
 }
 
 func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
@@ -161,7 +160,7 @@ func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.Shorten
 
 	var result []models.ShortenedLink
 	for _, url := range urls {
-		var dbURL dto.URLDB
+		var dbURL dto.ShortenedLinkDB
 		err := stmt.QueryRowContext(ctx, url.ShortCode, url.LongURL, url.CreatedAt).Scan(
 			&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt,
 		)
@@ -178,7 +177,7 @@ func (p *PostgresStorage) BatchCreate(ctx context.Context, urls []models.Shorten
 			return nil, fmt.Errorf("failed to insert URL: %w", err)
 		}
 
-		result = append(result, *dbURL.ToDomain())
+		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -229,11 +228,11 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 
 	var urls []models.ShortenedLink
 	for rows.Next() {
-		var dbURL dto.URLDB
+		var dbURL dto.ShortenedLinkDB
 		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
-		urls = append(urls, *dbURL.ToDomain())
+		urls = append(urls, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
 	if err := rows.Err(); err != nil {
@@ -244,7 +243,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 }
 
 func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
-	var dbURL dto.URLDB
+	var dbURL dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
 		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
 		originalURL,
@@ -257,7 +256,7 @@ func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (model
 		return models.ShortenedLink{}, fmt.Errorf("failed to check URL existence: %w", err)
 	}
 
-	return *dbURL.ToDomain(), nil
+	return dto.ShortenedLinkDBToDomain(dbURL), nil
 }
 
 func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error) {
@@ -276,11 +275,11 @@ func (p *PostgresStorage) ExistsBatch(ctx context.Context, originalURLs []string
 
 	var result []models.ShortenedLink
 	for rows.Next() {
-		var dbURL dto.URLDB
+		var dbURL dto.ShortenedLinkDB
 		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
-		result = append(result, *dbURL.ToDomain())
+		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
 	return result, nil
@@ -307,11 +306,11 @@ func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, e
 
 	var urls []models.ShortenedLink
 	for rows.Next() {
-		var dbURL dto.URLDB
+		var dbURL dto.ShortenedLinkDB
 		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.LongURL, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
-		urls = append(urls, *dbURL.ToDomain())
+		urls = append(urls, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
 	if err := rows.Err(); err != nil {
