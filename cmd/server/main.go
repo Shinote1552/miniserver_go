@@ -11,7 +11,6 @@ import (
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/server"
 	"urlshortener/internal/logger"
-	"urlshortener/internal/repository"
 	"urlshortener/internal/repository/filestore"
 	"urlshortener/internal/repository/inmemory"
 	"urlshortener/internal/repository/postgres"
@@ -70,7 +69,7 @@ func runServer(srv *server.Server, log *zerolog.Logger) {
 	}
 }
 
-func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) repository.Storage {
+func initPostgres(ctx context.Context, log *zerolog.Logger, cfg config.Config) *postgres.PostgresStorage {
 	if cfg.DatabaseDSN != "" {
 		storage, err := postgres.NewStorage(ctx, cfg.DatabaseDSN)
 		if err != nil {
@@ -93,6 +92,10 @@ func initStorage(ctx context.Context, log *zerolog.Logger, cfg config.Config) re
 		Msg("Using in-memory storage")
 	storage := inmemory.NewStorage()
 	return storage
+}
+
+func initInMemory() *inmemory.InmemoryStorage {
+
 }
 
 func closeStorage(log *zerolog.Logger, storage repository.Storage) {
