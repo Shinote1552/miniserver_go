@@ -31,12 +31,18 @@ func main() {
 				Error().
 				Err(err).
 				Msg("Failed to initialize PostgreSQL storage")
+		} else {
+
+			defer closePostgresStorage(log, storage)
+			defer savePostgresData(ctxRoot, log, *cfg, storage)
+			initPostgresData(ctxRoot, log, *cfg, storage)
+			service = services.NewServiceURLShortener(storage, cfg.BaseURL)
 		}
-		defer closePostgresStorage(log, storage)
-		defer savePostgresData(ctxRoot, log, *cfg, storage)
-		initPostgresData(ctxRoot, log, *cfg, storage)
-		service = services.NewServiceURLShortener(storage, cfg.BaseURL)
-	} else {
+	}
+	if service == nil {
+		log.
+			Info().
+			Msg("Using in-memory storage as fallback")
 		storage := initInMemory(log)
 		defer closeInMemoryStorage(log, storage)
 		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
@@ -50,15 +56,16 @@ func main() {
 			Msg("URL shortener service initialization failed")
 		return
 	}
+
 	srv, err := server.NewServer(log, *cfg, service)
 	if err != nil {
 		log.
 			Fatal().
 			Err(err).
 			Msg("Failed to create server")
+	} else {
+		runServer(srv, log)
 	}
-
-	runServer(srv, log)
 
 }
 
