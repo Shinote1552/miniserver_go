@@ -10,42 +10,24 @@ import (
 	"urlshortener/domain/models"
 )
 
-// Storage - основной интерфейс хранилища URL и shotURL
-type Storage interface {
-	// Основные CRUD операции
-	CreateOrUpdate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error)
+// URLStorage - основной интерфейс хранилища URL и shotURL
+type URLStorage interface {
+	Create(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
 	GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
 	GetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
-	Delete(ctx context.Context, shortKey string) error
-
-	// Пакетные операции
 	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-
-	// BatchGetByUserID(ctx context.Context, UUID string) ([]models.ShortenedLink, error)
-
 	ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
-
-	Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error)
-
-	// Пагинация/листинг
-	List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error)
-
-	// Управление соединением
 	Ping(ctx context.Context) error
-	Close() error
-
-	// only for experimental build
-	GetAll(ctx context.Context) ([]models.ShortenedLink, error)
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
 type URLShortener struct {
-	storage Storage
+	storage URLStorage
 	baseURL string
 }
 
 // NewServiceURLShortener создает новый экземпляр сервиса
-func NewServiceURLShortener(storage Storage, baseURL string) *URLShortener {
+func NewServiceURLShortener(storage URLStorage, baseURL string) *URLShortener {
 	return &URLShortener{
 		storage: storage,
 		baseURL: baseURL,
@@ -98,7 +80,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 		CreatedAt: time.Now(),
 	}
 
-	createdURL, err := s.storage.CreateOrUpdate(ctx, newURL)
+	createdURL, err := s.storage.Create(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
 			existing, err := s.storage.GetByLongURL(ctx, longUrl)
@@ -180,9 +162,9 @@ func (s *URLShortener) PingDataBase(ctx context.Context) error {
 	return nil
 }
 
-func (s *URLShortener) ListURLs(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error) {
-	return s.storage.List(ctx, limit, offset)
-}
+// func (s *URLShortener) ListURLs(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error) {
+// 	return s.storage.List(ctx, limit, offset)
+// }
 
 const (
 	maxAttempts  = 3

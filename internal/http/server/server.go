@@ -19,6 +19,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
+//go:generate mockgen
+type Authentication interface {
+	Register(ctx context.Context) (*models.User, string, string, error)
+	Login(ctx context.Context, userID int64) (string, string, error)
+	Refresh(ctx context.Context, refreshToken string) (string, string, error)
+	Validate(ctx context.Context, token string) (*models.User, error)
+}
+
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
 type URLShortener interface {
 	GetURL(context.Context, string) (models.ShortenedLink, error)
@@ -28,14 +36,15 @@ type URLShortener interface {
 }
 
 type Server struct {
-	httpServer *http.Server
-	router     *mux.Router
-	log        *zerolog.Logger
-	svc        URLShortener
-	cfg        config.Config
+	httpServer  *http.Server
+	router      *mux.Router
+	log         *zerolog.Logger
+	urlService  URLShortener
+	authService Authentication
+	cfg         config.Config
 }
 
-func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener) (*Server, error) {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth Authentication) (*Server, error) {
 
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и
@@ -54,10 +63,11 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener) (*Serve
 
 	s :=
 		&Server{
-			router: mux.NewRouter(),
-			cfg:    cfg,
-			log:    log,
-			svc:    svc,
+			router:      mux.NewRouter(),
+			cfg:         cfg,
+			log:         log,
+			urlService:  svc,
+			authService: auth,
 		}
 
 	s.httpServer = &http.Server{
@@ -75,16 +85,28 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener) (*Serve
 
 func (s *Server) setupRoutes() {
 
+	/*
+	 нужно будет в одну группу назначить(все запросы post, и один GET /api/user/urls) и привязать к middleware auth
+	*/
+
 	s.router.Use(middlewares.MiddlewareLogging(s.log))
 	s.router.Use(middlewares.MiddlewareCompressing())
 
-	s.router.HandleFunc("/ping", getping.HandlerPing(s.svc)).Methods("GET")
-	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.svc)).Methods("GET") // 307
-	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")            // 400
+	/*
+		Public routes (without auth)
+	*/
+	s.router.HandleFunc("/ping", getping.HandlerPing(s.urlService)).Methods("GET")
+	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.urlService)).Methods("GET") // 307
+	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                   // 400
 
-	s.router.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.svc, s.cfg.ServerAddress)).Methods("POST") // 201
-	s.router.HandleFunc("/api/shorten", seturljson.HandlerSetURLJson(s.svc, s.cfg.ServerAddress)).Methods("POST")                 // 201
-	s.router.HandleFunc("/", seturltext.HandlerSetURLText(s.svc, s.cfg.ServerAddress)).Methods("POST")                            // 201
+	authRouter := s.router.PathPrefix("/").Subrouter()
+	// authRouter.Use(middlewares.AuthMiddleware)
+
+	// Protected routes (with auth)
+	authRouter.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
+	authRouter.HandleFunc("/api/shorten", seturljson.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                 // 201
+	authRouter.HandleFunc("/", seturltext.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                            // 201
+	// authRouter.HandleFunc("/api/user/urls", yourHandlerFunction).Methods("GET")
 
 }
 

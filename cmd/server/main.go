@@ -22,7 +22,8 @@ func main() {
 	ctxRoot := context.Background()
 	cfg := config.NewConfig()
 	log := logger.NewLogger()
-	var service *services.URLShortener
+	var urlService *services.URLShortener
+	var authService *services.Authentication
 
 	if cfg.DatabaseDSN != "" {
 		storage, err := initPostgres(ctxRoot, log, cfg.DatabaseDSN)
@@ -36,7 +37,8 @@ func main() {
 			defer closePostgresStorage(log, storage)
 			defer savePostgresData(ctxRoot, log, *cfg, storage)
 			initPostgresData(ctxRoot, log, *cfg, storage)
-			service = services.NewServiceURLShortener(storage, cfg.BaseURL)
+			urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
+			authService := services.NewAuthentication(storage, cfg.JWTSecret)
 		}
 	}
 	if service == nil {
@@ -47,17 +49,18 @@ func main() {
 		defer closeInMemoryStorage(log, storage)
 		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
 		initInMemoryData(ctxRoot, log, *cfg, storage)
-		service = services.NewServiceURLShortener(storage, cfg.BaseURL)
+		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
+		authService := services.NewAuthentication(storage, cfg.JWTSecret)
 	}
 
-	if service == nil {
+	if urlService == nil {
 		log.
 			Fatal().
 			Msg("URL shortener service initialization failed")
 		return
 	}
 
-	srv, err := server.NewServer(log, *cfg, service)
+	srv, err := server.NewServer(log, *cfg, urlService, authService)
 	if err != nil {
 		log.
 			Fatal().
