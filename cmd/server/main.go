@@ -32,34 +32,48 @@ func main() {
 				Error().
 				Err(err).
 				Msg("Failed to initialize PostgreSQL storage")
+
 		} else {
 
 			defer closePostgresStorage(log, storage)
 			defer savePostgresData(ctxRoot, log, *cfg, storage)
 			initPostgresData(ctxRoot, log, *cfg, storage)
-			urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-			authService, err := services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
-			if err != nil {
 
+			var errAuth error
+			urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
+			authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+			if errAuth != nil {
+				log.
+					Error().
+					Err(errAuth).
+					Msg("Failed to initialize authentication with PostgreSQL")
+
+				urlService = nil
+				authService = nil
 			}
 		}
 	}
-	if service == nil {
+	if urlService == nil || authService == nil {
 		log.
 			Info().
 			Msg("Using in-memory storage as fallback")
+
 		storage := initInMemory(log)
 		defer closeInMemoryStorage(log, storage)
 		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
 		initInMemoryData(ctxRoot, log, *cfg, storage)
-		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-		authService, err := services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
-		if err != nil {
 
+		var errAuth error
+		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
+		authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+		if errAuth != nil {
+			log.Error().Err(errAuth).Msg("Failed to initialize authentication with in-memory storage")
+			urlService = nil
+			authService = nil
 		}
 	}
 
-	if urlService == nil {
+	if urlService == nil || authService == nil {
 		log.
 			Fatal().
 			Msg("URL shortener service initialization failed")

@@ -40,7 +40,7 @@ func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.Shor
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	url, err := s.storage.GetByShortKey(ctx, shortKey)
+	url, err := s.storage.ShortenedLinkGetByShortKey(ctx, shortKey)
 	if err != nil {
 		if errors.Is(err, models.ErrUnfound) {
 			return models.ShortenedLink{}, fmt.Errorf("%w: URL not found", models.ErrUnfound)
@@ -62,7 +62,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 	}
 
 	// Проверяем существование URL
-	existing, err := s.storage.GetByLongURL(ctx, longUrl)
+	existing, err := s.storage.ShortenedLinkGetByLongURL(ctx, longUrl)
 	if err == nil {
 		return existing, models.ErrConflict
 	}
@@ -80,10 +80,10 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 		CreatedAt: time.Now().UTC(),
 	}
 
-	createdURL, err := s.storage.Create(ctx, newURL)
+	createdURL, err := s.storage.ShortenedLinkCreate(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
-			existing, err := s.storage.GetByLongURL(ctx, longUrl)
+			existing, err := s.storage.ShortenedLinkGetByLongURL(ctx, longUrl)
 			if err != nil {
 				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
@@ -107,7 +107,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 		longUrls[i] = url.LongURL
 	}
 
-	existingURLs, err := s.storage.ExistsBatch(ctx, longUrls)
+	existingURLs, err := s.storage.ShortenedLinkBatchExists(ctx, longUrls)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing URLs: %w", err)
 	}
@@ -146,7 +146,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 	}
 
 	// Создаем новые URL
-	createdURLs, err := s.storage.BatchCreate(ctx, urlsToCreate)
+	createdURLs, err := s.storage.ShortenedLinkBatchCreate(ctx, urlsToCreate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create URLs: %w", err)
 	}
@@ -175,7 +175,7 @@ const (
 func (s *URLShortener) generateUniqueToken(ctx context.Context) (string, error) {
 	for i := 0; i < maxAttempts; i++ {
 		token := generateRandomToken()
-		_, err := s.storage.GetByShortKey(ctx, token)
+		_, err := s.storage.ShortenedLinkGetByShortKey(ctx, token)
 
 		if err != nil {
 			if errors.Is(err, models.ErrUnfound) {

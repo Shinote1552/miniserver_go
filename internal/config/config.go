@@ -55,7 +55,10 @@ func NewConfig() *Config {
 	// Parse flags
 	flag.StringVar(&cfg.ServerAddress, "server-address", cfg.ServerAddress, "Server address")
 	flag.StringVar(&cfg.BaseURL, "base-url", cfg.BaseURL, "Base URL")
-	flag.StringVar(&cfg.FileStoragePath, "file-storage-path", cfg.FileStoragePath, "File storage path")
+	flag.StringVar(&cfg.FileStoragePath, "file-storage-path",
+		filepath.Join(defaultFilestoreStorageDir, defaultFileStoragePath),
+		"File storage path (default: "+filepath.Join(defaultFilestoreStorageDir, defaultFileStoragePath)+")")
+
 	flag.StringVar(&cfg.DatabaseDSN, "database-dsn", cfg.DatabaseDSN, "Database DSN")
 	flag.DurationVar(&cfg.JWTAccessExpire, "jwt-access-expire", cfg.JWTAccessExpire, "JWT access token expiration")
 	flag.Parse()

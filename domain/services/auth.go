@@ -78,7 +78,7 @@ func (a *Authentication) GetUserLinks(ctx context.Context, jwtToken string) ([]m
 		return nil, fmt.Errorf("failed to validate token: %w", err)
 	}
 
-	userLinks, err := a.storage.ShortenedLinkGetByUser(ctx, userID)
+	userLinks, err := a.storage.ShortenedLinkGetBatchByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get links: %w", err)
 	}

@@ -44,8 +44,8 @@ var (
 
 // StorageInterface - ограниченный интерфейс для работы с filestore
 type StorageInterface interface {
-	CreateOrUpdate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error)
-	GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
+	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error)
+	ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
 	List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error)
 }
 
@@ -198,7 +198,7 @@ func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterf
 }
 
 func storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInterface, log zerolog.Logger) error {
-	_, err := storage.CreateOrUpdate(ctx, *url)
+	_, err := storage.ShortenedLinkCreate(ctx, *url)
 	if err == nil {
 		return nil
 	}

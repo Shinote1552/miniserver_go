@@ -20,24 +20,6 @@ const (
 	storagePingTimeout            = 5 * time.Second
 )
 
-/*
-давай вот такой нейминг:
-
-	type URLStorage interface {
-		ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
-		ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
-		ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
-		ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-		ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
-		Ping(ctx context.Context) error
-	}
-
-	type UserStorage interface {
-		UserCreate(ctx context.Context, user models.User) (models.User, error)
-		UserGetByID(ctx context.Context, id int64) (models.User, error)
-		ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
-	}
-*/
 const (
 	pgErrCodeUniqueViolation = "23505"
 )
@@ -206,7 +188,7 @@ func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			existing, err := p.GetByLongURL(ctx, url.LongURL)
+			existing, err := p.ShortenedLinkGetByLongURL(ctx, url.LongURL)
 			if err != nil {
 				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}

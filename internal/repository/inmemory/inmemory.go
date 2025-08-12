@@ -2,27 +2,30 @@ package inmemory
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"time"
 	"urlshortener/domain/models"
 )
 
-const initLastID = 0
-
 type InmemoryStorage struct {
-	data   map[string]models.ShortenedLink
-	lastID int64
+	data       map[string]models.ShortenedLink // shortKey -> ShortenedLink
+	users      map[int64]models.User           // userID -> User
+	lastURLID  int64
+	lastUserID int64
 }
 
 func NewStorage() *InmemoryStorage {
 	return &InmemoryStorage{
-		data:   make(map[string]models.ShortenedLink),
-		lastID: 0,
+		data:       make(map[string]models.ShortenedLink),
+		users:      make(map[int64]models.User),
+		lastURLID:  0,
+		lastUserID: 0,
 	}
 }
 
-func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
+// URLStorage methods
+
+func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
@@ -31,6 +34,7 @@ func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.Shorten
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	// Check for existing URL with same short code
 	if existingURL, exists := m.data[url.ShortCode]; exists {
 		if existingURL.LongURL == url.LongURL {
 			return existingURL, nil
@@ -38,8 +42,15 @@ func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.Shorten
 		return models.ShortenedLink{}, models.ErrConflict
 	}
 
-	m.lastID++
-	url.ID = m.lastID
+	// Check for existing URL with same long URL
+	for _, u := range m.data {
+		if u.LongURL == url.LongURL {
+			return u, models.ErrConflict
+		}
+	}
+
+	m.lastURLID++
+	url.ID = m.lastURLID
 	if url.CreatedAt.IsZero() {
 		url.CreatedAt = time.Now()
 	}
@@ -48,7 +59,7 @@ func (m *InmemoryStorage) CreateOrUpdate(ctx context.Context, url models.Shorten
 	return url, nil
 }
 
-func (m *InmemoryStorage) GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
+func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
@@ -64,7 +75,7 @@ func (m *InmemoryStorage) GetByShortKey(ctx context.Context, shortKey string) (m
 	return url, nil
 }
 
-func (m *InmemoryStorage) GetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
+func (m *InmemoryStorage) ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
@@ -81,37 +92,7 @@ func (m *InmemoryStorage) GetByLongURL(ctx context.Context, originalURL string) 
 	return models.ShortenedLink{}, models.ErrUnfound
 }
 
-func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, models.ErrInvalidData
-	}
-
-	urls := make([]models.ShortenedLink, 0, len(m.data))
-	for _, url := range m.data {
-		urls = append(urls, url)
-	}
-
-	sort.Slice(urls, func(i, j int) bool {
-		return urls[i].ID < urls[j].ID
-	})
-
-	return urls, nil
-}
-
-func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
-	if err := ctx.Err(); err != nil {
-		return models.ErrInvalidData
-	}
-
-	if shortKey == "" {
-		return models.ErrInvalidData
-	}
-
-	delete(m.data, shortKey)
-	return nil
-}
-
-func (m *InmemoryStorage) BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
+func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
@@ -122,30 +103,37 @@ func (m *InmemoryStorage) BatchCreate(ctx context.Context, urls []models.Shorten
 
 	result := make([]models.ShortenedLink, 0, len(urls))
 	for _, url := range urls {
-		createdURL, err := m.CreateOrUpdate(ctx, url)
-		if err != nil && !errors.Is(err, models.ErrConflict) {
-			return nil, err
+		// Check for conflicts first
+		conflict := false
+		for _, existing := range m.data {
+			if existing.LongURL == url.LongURL {
+				result = append(result, existing)
+				conflict = true
+				break
+			}
+			if existing.ShortCode == url.ShortCode {
+				conflict = true
+				break
+			}
 		}
-		result = append(result, createdURL)
+
+		if conflict {
+			continue
+		}
+
+		m.lastURLID++
+		url.ID = m.lastURLID
+		if url.CreatedAt.IsZero() {
+			url.CreatedAt = time.Now()
+		}
+		m.data[url.ShortCode] = url
+		result = append(result, url)
 	}
 
 	return result, nil
 }
 
-func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
-	if err := ctx.Err(); err != nil {
-		return models.ShortenedLink{}, models.ErrInvalidData
-	}
-
-	for _, url := range m.data {
-		if url.LongURL == originalURL {
-			return url, nil
-		}
-	}
-	return models.ShortenedLink{}, nil
-}
-
-func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error) {
+func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
@@ -154,7 +142,7 @@ func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string
 		return nil, models.ErrInvalidData
 	}
 
-	var result []models.ShortenedLink
+	result := make([]models.ShortenedLink, 0, len(originalURLs))
 	for _, originalURL := range originalURLs {
 		for _, url := range m.data {
 			if url.LongURL == originalURL {
@@ -163,6 +151,64 @@ func (m *InmemoryStorage) ExistsBatch(ctx context.Context, originalURLs []string
 			}
 		}
 	}
+
+	return result, nil
+}
+
+// UserStorage methods
+
+func (m *InmemoryStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return models.User{}, models.ErrInvalidData
+	}
+
+	m.lastUserID++
+	user.ID = m.lastUserID
+	if user.CreatedAt.IsZero() {
+		user.CreatedAt = time.Now()
+	}
+
+	m.users[user.ID] = user
+	return user, nil
+}
+
+func (m *InmemoryStorage) UserGetByID(ctx context.Context, id int64) (models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return models.User{}, models.ErrInvalidData
+	}
+
+	if id <= 0 {
+		return models.User{}, models.ErrInvalidData
+	}
+
+	user, exists := m.users[id]
+	if !exists {
+		return models.User{}, models.ErrUnfound
+	}
+	return user, nil
+}
+
+func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	if userID <= 0 {
+		return nil, models.ErrInvalidData
+	}
+
+	var result []models.ShortenedLink
+	for _, url := range m.data {
+		if url.UserID == userID {
+			result = append(result, url)
+		}
+	}
+
+	// Sort by creation date
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
+
 	return result, nil
 }
 
@@ -175,15 +221,18 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 		return nil, models.ErrInvalidData
 	}
 
+	// Получаем все URL из хранилища
 	allURLs := make([]models.ShortenedLink, 0, len(m.data))
 	for _, url := range m.data {
 		allURLs = append(allURLs, url)
 	}
 
+	// Сортируем по дате создания (от новых к старым)
 	sort.Slice(allURLs, func(i, j int) bool {
-		return allURLs[i].ID < allURLs[j].ID
+		return allURLs[i].CreatedAt.After(allURLs[j].CreatedAt)
 	})
 
+	// Применяем limit и offset
 	start := offset
 	if start > len(allURLs) {
 		start = len(allURLs)
@@ -204,8 +253,12 @@ func (m *InmemoryStorage) Ping(ctx context.Context) error {
 	return nil
 }
 
+// Common methods
+
 func (m *InmemoryStorage) Close() error {
 	m.data = make(map[string]models.ShortenedLink)
-	m.lastID = 0
+	m.users = make(map[int64]models.User)
+	m.lastURLID = 0
+	m.lastUserID = 0
 	return nil
 }
