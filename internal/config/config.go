@@ -29,17 +29,15 @@ const (
 	defaultDatabaseDSN         = "postgres://postgres:admin@localhost:5432/gpx_test?sslmode=disable"
 	defaultJWTSecretKey        = "YuHiAYxgw4WDdhxduFavo1/202YPUSwbn9AbO0R4dhs="
 	defaultJWTAccessExpire     = 15 * time.Minute
-	defaultJWTRefreshExpire    = 24 * time.Hour * 7
 )
 
 type Config struct {
-	ServerAddress    string
-	BaseURL          string
-	FileStoragePath  string
-	DatabaseDSN      string
-	JWTSecretKey     string // Минимум 32 байта для HS256
-	JWTAccessExpire  time.Duration
-	JWTRefreshExpire time.Duration
+	ServerAddress   string
+	BaseURL         string
+	FileStoragePath string
+	DatabaseDSN     string
+	JWTSecretKey    string // Минимум 32 байта для HS256
+	JWTAccessExpire time.Duration
 }
 
 func NewConfig() *Config {
@@ -47,12 +45,11 @@ func NewConfig() *Config {
 
 	// Initialize with defaults
 	*cfg = Config{
-		ServerAddress:    defaultServerAddress,
-		BaseURL:          defaultBaseURL,
-		FileStoragePath:  defaultFileStoragePath,
-		DatabaseDSN:      defaultDatabaseDSN,
-		JWTAccessExpire:  defaultJWTAccessExpire,
-		JWTRefreshExpire: defaultJWTRefreshExpire,
+		ServerAddress:   defaultServerAddress,
+		BaseURL:         defaultBaseURL,
+		FileStoragePath: defaultFileStoragePath,
+		DatabaseDSN:     defaultDatabaseDSN,
+		JWTAccessExpire: defaultJWTAccessExpire,
 	}
 
 	// Parse flags
@@ -61,7 +58,6 @@ func NewConfig() *Config {
 	flag.StringVar(&cfg.FileStoragePath, "file-storage-path", cfg.FileStoragePath, "File storage path")
 	flag.StringVar(&cfg.DatabaseDSN, "database-dsn", cfg.DatabaseDSN, "Database DSN")
 	flag.DurationVar(&cfg.JWTAccessExpire, "jwt-access-expire", cfg.JWTAccessExpire, "JWT access token expiration")
-	flag.DurationVar(&cfg.JWTRefreshExpire, "jwt-refresh-expire", cfg.JWTRefreshExpire, "JWT refresh token expiration")
 	flag.Parse()
 
 	// Apply environment variables
@@ -71,7 +67,6 @@ func NewConfig() *Config {
 	cfg.applyEnv("DATABASE_DSN", &cfg.DatabaseDSN)
 	cfg.applyEnv("JWT_SECRET_KEY", &cfg.JWTSecretKey)
 	cfg.applyEnvDuration("JWT_ACCESS_EXPIRE", &cfg.JWTAccessExpire)
-	cfg.applyEnvDuration("JWT_REFRESH_EXPIRE", &cfg.JWTRefreshExpire)
 
 	// Final setup
 	cfg.validateJWTSecret()

@@ -12,11 +12,11 @@ import (
 
 // URLStorage - основной интерфейс хранилища URL и shotURL
 type URLStorage interface {
-	Create(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
-	GetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
-	GetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
-	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-	ExistsBatch(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
+	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
+	ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
+	ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
+	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
+	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 	Ping(ctx context.Context) error
 }
 
@@ -77,7 +77,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 	newURL := models.ShortenedLink{
 		LongURL:   longUrl,
 		ShortCode: token,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
 	}
 
 	createdURL, err := s.storage.Create(ctx, newURL)

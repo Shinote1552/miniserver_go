@@ -7,13 +7,12 @@ import (
 
 type (
 	User struct {
-		ID        int64
-		UUID      string // уникальная ID строка crypto/rand
+		ID        int64 // Уникальный идентификатор
 		CreatedAt time.Time
 	}
 
 	ShortenedLink struct {
-		ID        int64  // Уникальный идентификатор в БД
+		ID        int64  // Уникальный идентификатор
 		LongURL   string // Оригинальный URL в изначальном виде
 		ShortCode string // Короткий код (aBcD12) - сокращенный URL
 		UserID    int64  // хэш сумма JWT подписи выданная пользователю

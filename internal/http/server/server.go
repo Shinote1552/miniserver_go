@@ -21,10 +21,9 @@ import (
 
 //go:generate mockgen
 type Authentication interface {
-	Register(ctx context.Context) (*models.User, string, string, error)
-	Login(ctx context.Context, userID int64) (string, string, error)
-	Refresh(ctx context.Context, refreshToken string) (string, string, error)
-	Validate(ctx context.Context, token string) (*models.User, error)
+	Register(ctx context.Context, user models.User) (models.User, string, error)
+	ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
+	GetUserLinks(ctx context.Context, jwtToken string) ([]models.ShortenedLink, error)
 }
 
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener

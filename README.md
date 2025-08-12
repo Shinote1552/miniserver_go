@@ -24,7 +24,7 @@
 | Переменная              | Примеры корректных значений      | Эквивалент в time.Duration      |
 |-------------------------|----------------------------------|----------------------------------|
 | `JWT_ACCESS_EXPIRE`     | `"15m"`, `"1h30m"`, `"90m"`     | `15 * time.Minute`               |
-| `JWT_REFRESH_EXPIRE`    | `"24h"`, `"168h"`, `"720h"`     | `24 * time.Hour`                 |
+| `JWT_ACCESS_EXPIRE`    | `"24h"`, `"168h"`, `"720h"`     | `24 * time.Hour`                 |
 
 ### Особенности:
 1. Можно комбинировать единицы:
@@ -46,7 +46,6 @@
 | FileStoragePath      | `"tmp/short-url-db.json"`                    |
 | DatabaseDSN          | `"postgres://postgres:admin@localhost:5432/gpx_test?sslmode=disable"` |
 | JWTAccessExpire      | `15m` (15 минут)                             |
-| JWTRefreshExpire     | `168h` (7 дней)                              |
 | JWTSecretKey         | Автогенерация (32 байта base64)              |
 
 ## Доступные флаги командной строки
@@ -58,7 +57,6 @@
 | `-file-storage-path`  | Путь к файлу хранилища URL        | `-file-storage-path="/data/urls.json"`|
 | `-database-dsn`       | DSN для подключения к PostgreSQL  | `-database-dsn="postgres://user:pass@localhost:5432/db"`|
 | `-jwt-access-expire`  | Время жизни Access токена         | `-jwt-access-expire="15m"`       |
-| `-jwt-refresh-expire` | Время жизни Refresh токена        | `-jwt-refresh-expire="168h"`     |
 
 ## Команда запуска со всеми кастомными параметрами
 
@@ -66,8 +64,7 @@
 go run urlshortener/cmd/server \
   -server-address="0.0.0.0:80" \
   -database-dsn="postgres://prod_user:pass@db:5432/production" \
-  -jwt-access-expire="30m" \
-  -jwt-refresh-expire="720h" 
+  -jwt-access-expire="30m" 
 
 ```
 
@@ -83,7 +80,6 @@ go run urlshortener/cmd/server \
 | `DATABASE_DSN`          | PostgreSQL DSN строка            | `postgres://user:pass@host:5432/dbname`  |
 | `JWT_SECRET_KEY`        | Секретный ключ для JWT           | `base64-encoded-32-byte-key`             |
 | `JWT_ACCESS_EXPIRE`     | Время жизни Access токена        | `15m` (15 минут)                         |
-| `JWT_REFRESH_EXPIRE`    | Время жизни Refresh токена       | `168h` (7 дней)                          |
 
 ## Пример .env файла
 
@@ -94,5 +90,4 @@ FILE_STORAGE_PATH=/data/urls.json
 DATABASE_DSN=postgres://app_user:password@db-server:5432/shortener_prod
 JWT_SECRET_KEY=uV8q7z$A%D*G-KaPdSgVkYp3s6v9y/BE
 JWT_ACCESS_EXPIRE=30m
-JWT_REFRESH_EXPIRE=720h
 ```

@@ -38,7 +38,10 @@ func main() {
 			defer savePostgresData(ctxRoot, log, *cfg, storage)
 			initPostgresData(ctxRoot, log, *cfg, storage)
 			urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-			authService := services.NewAuthentication(storage, cfg.JWTSecret)
+			authService, err := services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+			if err != nil {
+
+			}
 		}
 	}
 	if service == nil {
@@ -50,7 +53,10 @@ func main() {
 		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
 		initInMemoryData(ctxRoot, log, *cfg, storage)
 		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-		authService := services.NewAuthentication(storage, cfg.JWTSecret)
+		authService, err := services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+		if err != nil {
+
+		}
 	}
 
 	if urlService == nil {
