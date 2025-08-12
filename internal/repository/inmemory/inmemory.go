@@ -5,19 +5,20 @@ import (
 	"sort"
 	"time"
 	"urlshortener/domain/models"
+	"urlshortener/internal/repository/dto"
 )
 
 type InmemoryStorage struct {
-	data       map[string]models.ShortenedLink // shortKey -> ShortenedLink
-	users      map[int64]models.User           // userID -> User
+	data       map[string]dto.ShortenedLinkDB
+	users      map[int64]dto.UserDB
 	lastURLID  int64
 	lastUserID int64
 }
 
 func NewStorage() *InmemoryStorage {
 	return &InmemoryStorage{
-		data:       make(map[string]models.ShortenedLink),
-		users:      make(map[int64]models.User),
+		data:       make(map[string]dto.ShortenedLinkDB),
+		users:      make(map[int64]dto.UserDB),
 		lastURLID:  0,
 		lastUserID: 0,
 	}
@@ -37,7 +38,7 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	// Check for existing URL with same short code
 	if existingURL, exists := m.data[url.ShortCode]; exists {
 		if existingURL.LongURL == url.LongURL {
-			return existingURL, nil
+			return dto.ShortenedLinkDBToDomain(existingURL), nil
 		}
 		return models.ShortenedLink{}, models.ErrConflict
 	}
@@ -45,18 +46,19 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	// Check for existing URL with same long URL
 	for _, u := range m.data {
 		if u.LongURL == url.LongURL {
-			return u, models.ErrConflict
+			return dto.ShortenedLinkDBToDomain(u), models.ErrConflict
 		}
 	}
 
 	m.lastURLID++
-	url.ID = m.lastURLID
-	if url.CreatedAt.IsZero() {
-		url.CreatedAt = time.Now()
+	urlDB := dto.ShortenedLinkDBFromDomain(url)
+	urlDB.ID = m.lastURLID
+	if urlDB.CreatedAt.IsZero() {
+		urlDB.CreatedAt = time.Now()
 	}
 
-	m.data[url.ShortCode] = url
-	return url, nil
+	m.data[urlDB.ShortCode] = urlDB
+	return dto.ShortenedLinkDBToDomain(urlDB), nil
 }
 
 func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
@@ -72,7 +74,7 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
 	}
-	return url, nil
+	return dto.ShortenedLinkDBToDomain(url), nil
 }
 
 func (m *InmemoryStorage) ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
@@ -86,7 +88,7 @@ func (m *InmemoryStorage) ShortenedLinkGetByLongURL(ctx context.Context, origina
 
 	for _, url := range m.data {
 		if url.LongURL == originalURL {
-			return url, nil
+			return dto.ShortenedLinkDBToDomain(url), nil
 		}
 	}
 	return models.ShortenedLink{}, models.ErrUnfound
@@ -105,9 +107,11 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	for _, url := range urls {
 		// Check for conflicts first
 		conflict := false
+		var existingDB dto.ShortenedLinkDB
+
 		for _, existing := range m.data {
 			if existing.LongURL == url.LongURL {
-				result = append(result, existing)
+				existingDB = existing
 				conflict = true
 				break
 			}
@@ -118,16 +122,20 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		}
 
 		if conflict {
+			if existingDB.ID != 0 {
+				result = append(result, dto.ShortenedLinkDBToDomain(existingDB))
+			}
 			continue
 		}
 
 		m.lastURLID++
-		url.ID = m.lastURLID
-		if url.CreatedAt.IsZero() {
-			url.CreatedAt = time.Now()
+		urlDB := dto.ShortenedLinkDBFromDomain(url)
+		urlDB.ID = m.lastURLID
+		if urlDB.CreatedAt.IsZero() {
+			urlDB.CreatedAt = time.Now()
 		}
-		m.data[url.ShortCode] = url
-		result = append(result, url)
+		m.data[urlDB.ShortCode] = urlDB
+		result = append(result, dto.ShortenedLinkDBToDomain(urlDB))
 	}
 
 	return result, nil
@@ -146,7 +154,7 @@ func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, original
 	for _, originalURL := range originalURLs {
 		for _, url := range m.data {
 			if url.LongURL == originalURL {
-				result = append(result, url)
+				result = append(result, dto.ShortenedLinkDBToDomain(url))
 				break
 			}
 		}
@@ -156,20 +164,20 @@ func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, original
 }
 
 // UserStorage methods
-
 func (m *InmemoryStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
 	if err := ctx.Err(); err != nil {
 		return models.User{}, models.ErrInvalidData
 	}
 
 	m.lastUserID++
-	user.ID = m.lastUserID
-	if user.CreatedAt.IsZero() {
-		user.CreatedAt = time.Now()
+	userDB := dto.UserDBFromDomain(user)
+	userDB.ID = m.lastUserID
+	if userDB.CreatedAt.IsZero() {
+		userDB.CreatedAt = time.Now()
 	}
 
-	m.users[user.ID] = user
-	return user, nil
+	m.users[userDB.ID] = userDB
+	return dto.UserDBToDomain(userDB), nil
 }
 
 func (m *InmemoryStorage) UserGetByID(ctx context.Context, id int64) (models.User, error) {
@@ -185,7 +193,7 @@ func (m *InmemoryStorage) UserGetByID(ctx context.Context, id int64) (models.Use
 	if !exists {
 		return models.User{}, models.ErrUnfound
 	}
-	return user, nil
+	return dto.UserDBToDomain(user), nil
 }
 
 func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
@@ -200,7 +208,7 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 	var result []models.ShortenedLink
 	for _, url := range m.data {
 		if url.UserID == userID {
-			result = append(result, url)
+			result = append(result, dto.ShortenedLinkDBToDomain(url))
 		}
 	}
 
@@ -221,18 +229,18 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 		return nil, models.ErrInvalidData
 	}
 
-	// Получаем все URL из хранилища
+	// Get all URLs from storage
 	allURLs := make([]models.ShortenedLink, 0, len(m.data))
 	for _, url := range m.data {
-		allURLs = append(allURLs, url)
+		allURLs = append(allURLs, dto.ShortenedLinkDBToDomain(url))
 	}
 
-	// Сортируем по дате создания (от новых к старым)
+	// Sort by creation date (newest first)
 	sort.Slice(allURLs, func(i, j int) bool {
 		return allURLs[i].CreatedAt.After(allURLs[j].CreatedAt)
 	})
 
-	// Применяем limit и offset
+	// Apply limit and offset
 	start := offset
 	if start > len(allURLs) {
 		start = len(allURLs)
@@ -253,12 +261,58 @@ func (m *InmemoryStorage) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Common methods
-
 func (m *InmemoryStorage) Close() error {
-	m.data = make(map[string]models.ShortenedLink)
-	m.users = make(map[int64]models.User)
+	m.data = make(map[string]dto.ShortenedLinkDB)
+	m.users = make(map[int64]dto.UserDB)
 	m.lastURLID = 0
 	m.lastUserID = 0
 	return nil
+}
+
+func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
+	if err := ctx.Err(); err != nil {
+		return models.ErrInvalidData
+	}
+
+	if shortKey == "" {
+		return models.ErrInvalidData
+	}
+
+	if _, exists := m.data[shortKey]; !exists {
+		return models.ErrUnfound
+	}
+
+	delete(m.data, shortKey)
+	return nil
+}
+
+func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	result := make([]models.ShortenedLink, 0, len(m.data))
+	for _, url := range m.data {
+		result = append(result, dto.ShortenedLinkDBToDomain(url))
+	}
+
+	return result, nil
+}
+
+func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
+	if err := ctx.Err(); err != nil {
+		return models.ShortenedLink{}, models.ErrInvalidData
+	}
+
+	if originalURL == "" {
+		return models.ShortenedLink{}, models.ErrInvalidData
+	}
+
+	for _, url := range m.data {
+		if url.LongURL == originalURL {
+			return dto.ShortenedLinkDBToDomain(url), nil
+		}
+	}
+
+	return models.ShortenedLink{}, nil
 }
