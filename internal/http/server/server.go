@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 	"urlshortener/domain/models"
+	"urlshortener/domain/services"
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/handlers/middlewares"
 	"urlshortener/internal/http/handlers/system/getping"
@@ -19,13 +20,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-//go:generate mockgen
-type Authentication interface {
-	Register(ctx context.Context, user models.User) (models.User, string, error)
-	ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
-	GetUserLinks(ctx context.Context, jwtToken string) ([]models.ShortenedLink, error)
-}
-
 //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
 type URLShortener interface {
 	GetURL(context.Context, string) (models.ShortenedLink, error)
@@ -38,12 +32,12 @@ type Server struct {
 	httpServer  *http.Server
 	router      *mux.Router
 	log         *zerolog.Logger
+	authService *services.Authentication
 	urlService  URLShortener
-	authService Authentication
 	cfg         config.Config
 }
 
-func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth Authentication) (*Server, error) {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth *services.Authentication) (*Server, error) {
 
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и
@@ -65,8 +59,8 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth Au
 			router:      mux.NewRouter(),
 			cfg:         cfg,
 			log:         log,
-			urlService:  svc,
 			authService: auth,
+			urlService:  svc,
 		}
 
 	s.httpServer = &http.Server{
@@ -99,7 +93,7 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                   // 400
 
 	authRouter := s.router.PathPrefix("/").Subrouter()
-	// authRouter.Use(middlewares.AuthMiddleware)
+	authRouter.Use(middlewares.MiddlewareAuth(s.authService))
 
 	// Protected routes (with auth)
 	authRouter.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
