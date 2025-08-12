@@ -25,7 +25,7 @@ const (
 	defaultServerAddress       = "localhost:8080"
 	defaultBaseURL             = "http://localhost:8080"
 	defaultFilestoreStorageDir = "tmp"
-	defaultStorageFile         = "short-url-db.json"
+	defaultFileStoragePath     = "short-url-db.json"
 	defaultDatabaseDSN         = "postgres://postgres:admin@localhost:5432/gpx_test?sslmode=disable"
 	defaultJWTSecretKey        = "YuHiAYxgw4WDdhxduFavo1/202YPUSwbn9AbO0R4dhs="
 	defaultJWTAccessExpire     = 15 * time.Minute
@@ -45,15 +45,35 @@ type Config struct {
 func NewConfig() *Config {
 	cfg := &Config{}
 
-	flag.StringVar(&cfg.ServerAddress, "a", defaultServerAddress, "Server address")
-	flag.StringVar(&cfg.BaseURL, "b", defaultBaseURL, "Base URL")
-	flag.StringVar(&cfg.FileStoragePath, "f", "", "File storage path")
-	flag.StringVar(&cfg.DatabaseDSN, "d", defaultDatabaseDSN, "Database DSN")
-	flag.DurationVar(&cfg.JWTAccessExpire, "jwt-access-expire", defaultJWTAccessExpire, "JWT access token expiration")
-	flag.DurationVar(&cfg.JWTRefreshExpire, "jwt-refresh-expire", defaultJWTRefreshExpire, "JWT refresh token expiration")
+	// Initialize with defaults
+	*cfg = Config{
+		ServerAddress:    defaultServerAddress,
+		BaseURL:          defaultBaseURL,
+		FileStoragePath:  defaultFileStoragePath,
+		DatabaseDSN:      defaultDatabaseDSN,
+		JWTAccessExpire:  defaultJWTAccessExpire,
+		JWTRefreshExpire: defaultJWTRefreshExpire,
+	}
+
+	// Parse flags
+	flag.StringVar(&cfg.ServerAddress, "server-address", cfg.ServerAddress, "Server address")
+	flag.StringVar(&cfg.BaseURL, "base-url", cfg.BaseURL, "Base URL")
+	flag.StringVar(&cfg.FileStoragePath, "file-storage-path", cfg.FileStoragePath, "File storage path")
+	flag.StringVar(&cfg.DatabaseDSN, "database-dsn", cfg.DatabaseDSN, "Database DSN")
+	flag.DurationVar(&cfg.JWTAccessExpire, "jwt-access-expire", cfg.JWTAccessExpire, "JWT access token expiration")
+	flag.DurationVar(&cfg.JWTRefreshExpire, "jwt-refresh-expire", cfg.JWTRefreshExpire, "JWT refresh token expiration")
 	flag.Parse()
 
-	cfg.applyEnvOverrides()
+	// Apply environment variables
+	cfg.applyEnv("SERVER_ADDRESS", &cfg.ServerAddress)
+	cfg.applyEnv("BASE_URL", &cfg.BaseURL)
+	cfg.applyEnv("FILE_STORAGE_PATH", &cfg.FileStoragePath)
+	cfg.applyEnv("DATABASE_DSN", &cfg.DatabaseDSN)
+	cfg.applyEnv("JWT_SECRET_KEY", &cfg.JWTSecretKey)
+	cfg.applyEnvDuration("JWT_ACCESS_EXPIRE", &cfg.JWTAccessExpire)
+	cfg.applyEnvDuration("JWT_REFRESH_EXPIRE", &cfg.JWTRefreshExpire)
+
+	// Final setup
 	cfg.validateJWTSecret()
 	cfg.FileStoragePath = cfg.resolveFilePath()
 	cfg.normalizeServerAddress()
@@ -61,37 +81,23 @@ func NewConfig() *Config {
 	return cfg
 }
 
-func (c *Config) applyEnvOverrides() {
-	if envAddr := os.Getenv(envServerAddress); envAddr != "" {
-		c.ServerAddress = envAddr
+func (c *Config) applyEnv(key string, target *string) {
+	if val, ok := os.LookupEnv(key); ok {
+		*target = val
 	}
-	if envURL := os.Getenv(envBaseURL); envURL != "" {
-		c.BaseURL = envURL
-	}
-	if envPath := os.Getenv(envFileStoragePath); envPath != "" {
-		c.FileStoragePath = envPath
-	}
-	if envDSN := os.Getenv(envDatabaseDSN); envDSN != "" {
-		c.DatabaseDSN = envDSN
-	}
-	if envKey := os.Getenv(envJWTSecretKey); envKey != "" {
-		c.JWTSecretKey = envKey
-	}
-	if envExp := os.Getenv(envJWTAccessExpire); envExp != "" {
-		if d, err := time.ParseDuration(envExp); err == nil {
-			c.JWTAccessExpire = d
-		}
-	}
-	if envExp := os.Getenv(envJWTRefreshExpire); envExp != "" {
-		if d, err := time.ParseDuration(envExp); err == nil {
-			c.JWTRefreshExpire = d
+}
+
+func (c *Config) applyEnvDuration(key string, target *time.Duration) {
+	if val, ok := os.LookupEnv(key); ok {
+		if d, err := time.ParseDuration(val); err == nil {
+			*target = d
 		}
 	}
 }
 
 func (c *Config) validateJWTSecret() {
 	if c.JWTSecretKey == "" {
-		// Генерируем случайный ключ при запуске (только для разработки!)
+		// Generate random key for development
 		key := make([]byte, 32)
 		if _, err := rand.Read(key); err != nil {
 			panic("failed to generate JWT secret key")
@@ -100,29 +106,20 @@ func (c *Config) validateJWTSecret() {
 		fmt.Println("WARNING: Using auto-generated JWT secret key. For production, set JWT_SECRET_KEY environment variable.")
 	}
 
-	// Проверяем длину ключа
-	keyBytes, err := base64.StdEncoding.DecodeString(c.JWTSecretKey)
-	if err != nil || len(keyBytes) < 32 {
+	// Validate key length
+	if _, err := base64.StdEncoding.DecodeString(c.JWTSecretKey); err != nil || len(c.JWTSecretKey) < 32 {
 		panic("JWT secret key must be at least 32 bytes long (base64 encoded)")
 	}
 }
 
 func (c *Config) resolveFilePath() string {
-	if c.FileStoragePath == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return filepath.Join(defaultFilestoreStorageDir, defaultStorageFile)
-		}
-		return filepath.Join(wd, defaultFilestoreStorageDir, defaultStorageFile)
-	}
-
 	if filepath.IsAbs(c.FileStoragePath) {
 		return c.FileStoragePath
 	}
 
 	absPath, err := filepath.Abs(c.FileStoragePath)
 	if err != nil {
-		return c.FileStoragePath
+		return filepath.Clean(c.FileStoragePath)
 	}
 	return absPath
 }

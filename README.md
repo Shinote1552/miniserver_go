@@ -1,12 +1,13 @@
-# Текущая структура проекта:
-- Domain Models (domain/models/) - место для бизнес-сущностей.
-- Services (domain/services/) - содержит бизнес-логику (это и есть use cases).
-- Handlers (internal/http/handlers/) - это контроллеры.
-- DTOs (internal/http/dto/) (internal/repository/dto/) - разделение на транспортных модели.
-- Repository - слой для работы с данными.
-
-
 # System configurating
+## Структура проекта
+- **Domain Models**: `domain/models/` - бизнес-сущности
+- **Services**: `domain/services/` - бизнес-логика (use cases)
+- **Handlers**: `internal/http/handlers/` - HTTP контроллеры
+- **DTOs**: 
+  - `internal/http/dto/` - транспортные модели
+  - `internal/repository/dto/` - модели репозитория
+- **Repository** - слой работы с данными
+
 ## Формат указания времени в конфигурации
 Важно: Все значения должны быть строкой в кавычках при использовании в env-файлах или командной строке.
 Используется формат, совместимый с `time.ParseDuration` из стандартного пакета Go:
@@ -37,41 +38,37 @@
 2. Переменные окружения (`SERVER_ADDRESS`, `DATABASE_DSN`)
 3. Значения по умолчанию (хардкод в `config` пакете)
 
-## Значения по умолчанию
-
+### Значения по умолчанию
 | Параметр             | Значение по умолчанию                          |
 |----------------------|-----------------------------------------------|
-| ServerAddress        | `"localhost:8080"`                            |
-| BaseURL              | `"http://localhost:8080"`                     |
-| FileStoragePath      | `"tmp/short-url-db.json"`                     |
+| ServerAddress        | `"localhost:8080"`                           |
+| BaseURL              | `"http://localhost:8080"`                    |
+| FileStoragePath      | `"tmp/short-url-db.json"`                    |
 | DatabaseDSN          | `"postgres://postgres:admin@localhost:5432/gpx_test?sslmode=disable"` |
-| JWTAccessExpire      | `15 * time.Minute` (15 минут)                 |
-| JWTRefreshExpire     | `168 * time.Hour` (7 дней)                    |
-| JWTSecretKey         | Автогенерация при запуске (32 байта в base64) |
+| JWTAccessExpire      | `15m` (15 минут)                             |
+| JWTRefreshExpire     | `168h` (7 дней)                              |
+| JWTSecretKey         | Автогенерация (32 байта base64)              |
 
-## Доступные флаги
+## Доступные флаги командной строки
 
-| Флаг               | Описание                          | Пример                   |
-|--------------------|-----------------------------------|--------------------------|
-| `-a`               | Адрес сервера                     | `-a=":8080"`             |
-| `-b`               | Базовый URL                       | `-b="https://example.com"`|
-| `-f`               | Путь к файловому хранилищу        | `-f="/data/storage.json"`|
-| `-d`               | DSN для подключения к БД          | `-d="postgres://user:pass@host/db"`|
-| `-jwt-access-expire`| Время жизни access-токена JWT    | `-jwt-access-expire=30m` |
-| `-jwt-refresh-expire`| Время жизни refresh-токена JWT  | `-jwt-refresh-expire=168h`|
-
+| Флаг                  | Описание                          | Пример значения                  |
+|-----------------------|-----------------------------------|----------------------------------|
+| `-server-address`     | Адрес и порт сервера              | `-server-address=":8080"`        |
+| `-base-url`           | Базовый URL для ссылок            | `-base-url="https://example.com"`|
+| `-file-storage-path`  | Путь к файлу хранилища URL        | `-file-storage-path="/data/urls.json"`|
+| `-database-dsn`       | DSN для подключения к PostgreSQL  | `-database-dsn="postgres://user:pass@localhost:5432/db"`|
+| `-jwt-access-expire`  | Время жизни Access токена         | `-jwt-access-expire="15m"`       |
+| `-jwt-refresh-expire` | Время жизни Refresh токена        | `-jwt-refresh-expire="168h"`     |
 
 ## Команда запуска со всеми кастомными параметрами
 
 ```bash
 go run urlshortener/cmd/server \
-  -a="0.0.0.0:9000" \
-  -b="https://my-shortener.com" \
-  -f="/opt/app/data/urls.json" \
-  -d="postgres://postgres:admin@localhost:5432/url_shortener" \
-  -jwt-access-expire="20m" \
-  -jwt-refresh-expire="240h" \
-  -jwt-secret-key="my-super-secret-key-must-be-32-bytes!"
+  -server-address="0.0.0.0:80" \
+  -database-dsn="postgres://prod_user:pass@db:5432/production" \
+  -jwt-access-expire="30m" \
+  -jwt-refresh-expire="720h" 
+
 ```
 
 # Environment Variables Configuration
