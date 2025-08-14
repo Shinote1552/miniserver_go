@@ -12,6 +12,7 @@ type (
 		OriginalURL string    `db:"original_url"`
 		ShortCode   string    `db:"short_key"`
 		UserID      int64     `db:"user_id"`
+		IsDeleted   bool      `db:"is_deleted"`
 		CreatedAt   time.Time `db:"created_at"`
 	}
 )

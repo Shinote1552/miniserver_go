@@ -18,7 +18,13 @@ type URLStorage interface {
 	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
+	DeleteURLsBatch(ctx context.Context, userID int64, shortURLs []string) error
 	Ping(ctx context.Context) error
+
+	/*
+
+		ShortenedLinkDeleteURLsBatch
+	*/
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
@@ -28,7 +34,6 @@ type URLShortener struct {
 }
 
 func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
-
 	if userID <= 0 {
 		return nil, fmt.Errorf("failed to validate userID")
 	}
@@ -38,8 +43,15 @@ func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models
 		return nil, fmt.Errorf("failed to get links: %w", err)
 	}
 
-	return userLinks, nil
+	// Фильтруем удаленные URL
+	var activeLinks []models.ShortenedLink
+	for _, link := range userLinks {
+		if !link.IsDeleted {
+			activeLinks = append(activeLinks, link)
+		}
+	}
 
+	return activeLinks, nil
 }
 
 // NewServiceURLShortener создает новый экземпляр сервиса
@@ -48,6 +60,24 @@ func NewServiceURLShortener(storage URLStorage, baseURL string) *URLShortener {
 		storage: storage,
 		baseURL: baseURL,
 	}
+}
+
+// DeleteURLs помечает URL как удаленные (асинхронно)
+func (s *URLShortener) DeleteURLs(ctx context.Context, userID int64, shortURLs []string) error {
+	if userID <= 0 {
+		return fmt.Errorf("invalid user ID")
+	}
+
+	if len(shortURLs) == 0 {
+		return fmt.Errorf("empty URLs list")
+	}
+
+	// Асинхронное удаление
+	go func() {
+		_ = s.storage.DeleteURLsBatch(context.Background(), userID, shortURLs)
+	}()
+
+	return nil
 }
 
 // GetURL возвращает оригинальный URL по короткому ключу
@@ -63,6 +93,11 @@ func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.Shor
 		}
 		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
+
+	if url.IsDeleted {
+		return models.ShortenedLink{}, models.ErrDeleted
+	}
+
 	return url, nil
 }
 

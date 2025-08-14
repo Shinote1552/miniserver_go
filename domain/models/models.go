@@ -16,6 +16,7 @@ type (
 		OriginalURL string // Оригинальный URL в изначальном виде
 		ShortCode   string // Короткий код (aBcD12) - сокращенный URL
 		UserID      int64  // хэш сумма JWT подписи выданная пользователю
+		IsDeleted   bool   //TODO хз нужен он вообще?
 		CreatedAt   time.Time
 	}
 )
@@ -25,4 +26,5 @@ var (
 	ErrUnfound     = errors.New("unfound data")
 	ErrEmpty       = errors.New("storage is empty")
 	ErrConflict    = errors.New("duplicate URL")
+	ErrDeleted     = errors.New("url is deleted")
 )

@@ -61,25 +61,50 @@ func initConnectionPools(db *sql.DB) {
 
 func createTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
-	CREATE TABLE IF NOT EXISTS users(
-		id BIGSERIAL PRIMARY KEY,
-		created_at TIMESTAMP NOT NULL
-	)`)
-	if err != nil {
-		return fmt.Errorf("failed to create users table: %w", err)
-	}
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS urls (
-			id BIGSERIAL PRIMARY KEY,
-			short_key VARCHAR(10) UNIQUE NOT NULL,
-			original_url TEXT NOT NULL,
-			created_at TIMESTAMP NOT NULL,
-			UNIQUE (original_url)
-		)`)
-
+        CREATE TABLE IF NOT EXISTS urls (
+            id BIGSERIAL PRIMARY KEY,
+            short_key VARCHAR(10) UNIQUE NOT NULL,
+            original_url TEXT NOT NULL,
+            user_id BIGINT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            is_deleted BOOLEAN DEFAULT FALSE,  // Добавляем колонку
+            UNIQUE (original_url)
+        )`)
 	if err != nil {
 		return fmt.Errorf("failed to create urls table: %w", err)
+	}
+	return nil
+}
+
+// internal/repository/postgres/storage.go
+func (p *PostgresStorage) DeleteURLsBatch(ctx context.Context, userID int64, shortURLs []string) error {
+	if len(shortURLs) == 0 {
+		return nil
+	}
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("ошибка начала транзакции: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		UPDATE urls 
+		SET is_deleted = TRUE 
+		WHERE short_key = $1 AND user_id = $2`)
+	if err != nil {
+		return fmt.Errorf("ошибка подготовки запроса: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, shortKey := range shortURLs {
+		if _, err := stmt.ExecContext(ctx, shortKey, userID); err != nil {
+			return fmt.Errorf("ошибка удаления URL%s:: %w", shortKey, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("ошибка коммита транзакции: %w", err)
 	}
 
 	return nil
@@ -207,15 +232,16 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 
 	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls WHERE short_key = $1",
+		`SELECT id, short_key, original_url, user_id, created_at, is_deleted 
+		 FROM urls WHERE short_key = $1`,
 		shortKey,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt, &result.IsDeleted)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.ShortenedLink{}, models.ErrUnfound
 		}
-		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("ошибка получения URL: %w", err)
 	}
 
 	return dto.ShortenedLinkDBToDomain(result), nil

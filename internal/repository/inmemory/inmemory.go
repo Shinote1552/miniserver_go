@@ -3,6 +3,7 @@ package inmemory
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 	"urlshortener/domain/models"
 	"urlshortener/internal/repository/dto"
@@ -13,6 +14,7 @@ type InmemoryStorage struct {
 	users      map[int64]dto.UserDB
 	lastURLID  int64
 	lastUserID int64
+	mu         sync.RWMutex
 }
 
 func NewStorage() *InmemoryStorage {
@@ -35,6 +37,9 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Check for existing URL with same short code
 	if existingURL, exists := m.data[url.ShortCode]; exists {
 		if existingURL.OriginalURL == url.OriginalURL {
@@ -53,6 +58,7 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	m.lastURLID++
 	urlDB := dto.ShortenedLinkDBFromDomain(url)
 	urlDB.ID = m.lastURLID
+	urlDB.IsDeleted = false // Устанавливаем флаг удаления в false при создании
 	if urlDB.CreatedAt.IsZero() {
 		urlDB.CreatedAt = time.Now()
 	}
@@ -70,10 +76,19 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	url, exists := m.data[shortKey]
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
 	}
+
+	// Возвращаем ошибку, если URL помечен как удаленный
+	if url.IsDeleted {
+		return dto.ShortenedLinkDBToDomain(url), models.ErrDeleted
+	}
+
 	return dto.ShortenedLinkDBToDomain(url), nil
 }
 
@@ -86,12 +101,43 @@ func (m *InmemoryStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	for _, url := range m.data {
 		if url.OriginalURL == originalURL {
+			if url.IsDeleted {
+				return dto.ShortenedLinkDBToDomain(url), models.ErrDeleted
+			}
 			return dto.ShortenedLinkDBToDomain(url), nil
 		}
 	}
 	return models.ShortenedLink{}, models.ErrUnfound
+}
+
+func (m *InmemoryStorage) DeleteURLsBatch(ctx context.Context, userID int64, shortURLs []string) error {
+	if err := ctx.Err(); err != nil {
+		return models.ErrInvalidData
+	}
+
+	if len(shortURLs) == 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, shortKey := range shortURLs {
+		if url, exists := m.data[shortKey]; exists {
+			// Проверяем, что URL принадлежит пользователю
+			if url.UserID == userID {
+				url.IsDeleted = true
+				m.data[shortKey] = url
+			}
+		}
+	}
+
+	return nil
 }
 
 func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
@@ -103,9 +149,12 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		return nil, models.ErrInvalidData
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	result := make([]models.ShortenedLink, 0, len(urls))
 	for _, url := range urls {
-		// Check for conflicts first
+		// Проверяем конфликты
 		conflict := false
 		var existingDB dto.ShortenedLinkDB
 
@@ -131,6 +180,7 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		m.lastURLID++
 		urlDB := dto.ShortenedLinkDBFromDomain(url)
 		urlDB.ID = m.lastURLID
+		urlDB.IsDeleted = false
 		if urlDB.CreatedAt.IsZero() {
 			urlDB.CreatedAt = time.Now()
 		}
@@ -205,14 +255,17 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 		return nil, models.ErrInvalidData
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	var result []models.ShortenedLink
 	for _, url := range m.data {
-		if url.UserID == userID {
+		if url.UserID == userID && !url.IsDeleted {
 			result = append(result, dto.ShortenedLinkDBToDomain(url))
 		}
 	}
 
-	// Sort by creation date
+	// Сортируем по дате создания
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
@@ -278,12 +331,16 @@ func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
 		return models.ErrInvalidData
 	}
 
-	if _, exists := m.data[shortKey]; !exists {
-		return models.ErrUnfound
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if url, exists := m.data[shortKey]; exists {
+		url.IsDeleted = true
+		m.data[shortKey] = url
+		return nil
 	}
 
-	delete(m.data, shortKey)
-	return nil
+	return models.ErrUnfound
 }
 
 func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
@@ -291,9 +348,14 @@ func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, e
 		return nil, models.ErrInvalidData
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	result := make([]models.ShortenedLink, 0, len(m.data))
 	for _, url := range m.data {
-		result = append(result, dto.ShortenedLinkDBToDomain(url))
+		if !url.IsDeleted {
+			result = append(result, dto.ShortenedLinkDBToDomain(url))
+		}
 	}
 
 	return result, nil
