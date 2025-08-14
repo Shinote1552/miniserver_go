@@ -12,11 +12,11 @@ type (
 	}
 
 	ShortenedLink struct {
-		ID        int64  // Уникальный идентификатор
-		LongURL   string // Оригинальный URL в изначальном виде
-		ShortCode string // Короткий код (aBcD12) - сокращенный URL
-		UserID    int64  // хэш сумма JWT подписи выданная пользователю
-		CreatedAt time.Time
+		ID          int64  // Уникальный идентификатор
+		OriginalURL string // Оригинальный URL в изначальном виде
+		ShortCode   string // Короткий код (aBcD12) - сокращенный URL
+		UserID      int64  // хэш сумма JWT подписи выданная пользователю
+		CreatedAt   time.Time
 	}
 )
 

@@ -2,6 +2,7 @@
 package dto
 
 import (
+	"time"
 	"urlshortener/domain/models"
 )
 
@@ -26,6 +27,11 @@ type (
 		ShortURL      string `json:"short_url"`
 	}
 
+	ShortenedLinkBatchCreateRequest struct {
+		OriginalURL string `json:"original_url"`
+		UserID      uint64 `json:"user_id"`
+	}
+
 	// Для GET /api/user/urls
 	ShortenedLinkBatchGetResponse struct {
 		ShortURL    string `json:"short_url"`
@@ -43,7 +49,7 @@ type (
 
 func ShortenedLinkSingleRequestToDomain(r ShortenedLinkSingleRequest) models.ShortenedLink {
 	return models.ShortenedLink{
-		LongURL: r.URL,
+		OriginalURL: r.URL,
 	}
 }
 
@@ -53,11 +59,14 @@ func ShortenedLinkSingleResponseFromDomain(url models.ShortenedLink, baseURL str
 	}
 }
 
-func ShortenedLinkBatchRequestsToDomains(reqs []ShortenedLinkBatchRequest) []models.ShortenedLink {
+// ShortenedLinkBatchRequest -> domain
+func ShortenedLinkBatchRequestToDomain(reqs []ShortenedLinkBatchRequest, userID int64) []models.ShortenedLink {
 	urls := make([]models.ShortenedLink, len(reqs))
 	for i, r := range reqs {
 		urls[i] = models.ShortenedLink{
-			LongURL: r.OriginalURL,
+			OriginalURL: r.OriginalURL,
+			UserID:      userID,
+			CreatedAt:   time.Now().UTC(),
 		}
 	}
 	return urls
@@ -81,7 +90,7 @@ func ShortenedLinkBatchGetResponseFromDomains(urls []models.ShortenedLink, baseU
 	for i, url := range urls {
 		responses[i] = ShortenedLinkBatchGetResponse{
 			ShortURL:    baseURL + "/" + url.ShortCode,
-			OriginalURL: url.LongURL,
+			OriginalURL: url.OriginalURL,
 		}
 	}
 	return responses

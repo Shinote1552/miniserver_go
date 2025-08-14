@@ -18,47 +18,47 @@ func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
+		// Получаем ID пользователя из контекста
+		userID, ok := ctx.Value("user_id").(int64)
+		if !ok || userID == 0 {
+			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
 		var requestBatch []dto.ShortenedLinkBatchRequest
 		if err := json.NewDecoder(r.Body).Decode(&requestBatch); err != nil {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "invalid request format")
 			return
 		}
 
-		requestMap := make(map[string]dto.ShortenedLinkBatchRequest, len(requestBatch))
-		urls := make([]models.ShortenedLink, 0, len(requestBatch))
-
+		// Создаем map для быстрого поиска correlation_id по URL
+		urlToCorrelation := make(map[string]string, len(requestBatch))
 		for _, req := range requestBatch {
-			requestMap[req.OriginalURL] = req
-			urls = append(urls, models.ShortenedLink{
-				LongURL: req.OriginalURL,
-			})
+			urlToCorrelation[req.OriginalURL] = req.CorrelationID
 		}
 
-		createdURLs, err := svc.BatchCreate(ctx, urls)
-		if err != nil {
-			if errors.Is(err, models.ErrConflict) {
-				response := dto.ShortenedLinkBatchCreateResponseFromDomains(createdURLs, urlroot)
+		modelsBatch := dto.ShortenedLinkBatchRequestToDomain(requestBatch, userID)
 
-				// Сопоставлем по correlation_id // можно будет в функцию вывести
-				for i := range response {
-					if req, exists := requestMap[createdURLs[i].LongURL]; exists {
-						response[i].CorrelationID = req.CorrelationID
-					}
-				}
-				httputils.WriteJSONResponse(w, http.StatusConflict, response)
-				return
+		createdURLs, err := svc.BatchCreate(ctx, modelsBatch)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, models.ErrConflict) {
+				status = http.StatusConflict
 			}
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to process batch")
+
+			response := dto.ShortenedLinkBatchCreateResponseFromDomains(createdURLs, urlroot)
+			// Добавляем correlation_id внутри обработчика
+			for i := range response {
+				response[i].CorrelationID = urlToCorrelation[createdURLs[i].OriginalURL]
+			}
+			httputils.WriteJSONResponse(w, status, response)
 			return
 		}
 
 		response := dto.ShortenedLinkBatchCreateResponseFromDomains(createdURLs, urlroot)
-
-		// Сопоставлем по correlation_id // можно будет в функцию вывести
+		// Добавляем correlation_id внутри обработчика
 		for i := range response {
-			if req, exists := requestMap[createdURLs[i].LongURL]; exists {
-				response[i].CorrelationID = req.CorrelationID
-			}
+			response[i].CorrelationID = urlToCorrelation[createdURLs[i].OriginalURL]
 		}
 
 		httputils.WriteJSONResponse(w, http.StatusCreated, response)

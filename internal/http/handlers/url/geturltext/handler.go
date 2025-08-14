@@ -30,7 +30,7 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Location", url.LongURL)
+		w.Header().Set("Location", url.OriginalURL)
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	}
 }

@@ -31,13 +31,13 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	if url.ShortCode == "" || url.LongURL == "" {
+	if url.ShortCode == "" || url.OriginalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
 	// Check for existing URL with same short code
 	if existingURL, exists := m.data[url.ShortCode]; exists {
-		if existingURL.LongURL == url.LongURL {
+		if existingURL.OriginalURL == url.OriginalURL {
 			return dto.ShortenedLinkDBToDomain(existingURL), nil
 		}
 		return models.ShortenedLink{}, models.ErrConflict
@@ -45,7 +45,7 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 
 	// Check for existing URL with same long URL
 	for _, u := range m.data {
-		if u.LongURL == url.LongURL {
+		if u.OriginalURL == url.OriginalURL {
 			return dto.ShortenedLinkDBToDomain(u), models.ErrConflict
 		}
 	}
@@ -77,7 +77,7 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	return dto.ShortenedLinkDBToDomain(url), nil
 }
 
-func (m *InmemoryStorage) ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
+func (m *InmemoryStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
@@ -87,7 +87,7 @@ func (m *InmemoryStorage) ShortenedLinkGetByLongURL(ctx context.Context, origina
 	}
 
 	for _, url := range m.data {
-		if url.LongURL == originalURL {
+		if url.OriginalURL == originalURL {
 			return dto.ShortenedLinkDBToDomain(url), nil
 		}
 	}
@@ -110,7 +110,7 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		var existingDB dto.ShortenedLinkDB
 
 		for _, existing := range m.data {
-			if existing.LongURL == url.LongURL {
+			if existing.OriginalURL == url.OriginalURL {
 				existingDB = existing
 				conflict = true
 				break
@@ -153,7 +153,7 @@ func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, original
 	result := make([]models.ShortenedLink, 0, len(originalURLs))
 	for _, originalURL := range originalURLs {
 		for _, url := range m.data {
-			if url.LongURL == originalURL {
+			if url.OriginalURL == originalURL {
 				result = append(result, dto.ShortenedLinkDBToDomain(url))
 				break
 			}
@@ -309,7 +309,7 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 	}
 
 	for _, url := range m.data {
-		if url.LongURL == originalURL {
+		if url.OriginalURL == originalURL {
 			return dto.ShortenedLinkDBToDomain(url), nil
 		}
 	}

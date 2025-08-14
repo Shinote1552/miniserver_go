@@ -49,38 +49,41 @@ type StorageInterface interface {
 	List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error)
 }
 
-// Load loads URLs from file into storage
-func Load(ctx context.Context, log zerolog.Logger, filePath string, storage StorageInterface) (string, error) {
+// Load loads URLs from file into storage and returns whether file was empty
+func Load(ctx context.Context, log zerolog.Logger, filePath string, storage StorageInterface) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return "", logError(log, err, "context error")
+		return "", false, logError(log, err, "context error")
 	}
 
 	if filePath == "" {
-		return handleEmptyFilePath(log)
+		msg := "No file path provided - using empty storage"
+		log.Info().Msg(msg)
+		return msg, true, nil
 	}
 
 	absPath, err := getAbsolutePath(filePath)
 	if err != nil {
-		return "", logAndWrapError(log, err, ErrAbsPath, "get absolute path")
+		return "", false, logAndWrapError(log, err, ErrAbsPath, "get absolute path")
 	}
 
 	if err := ensureFileExists(ctx, absPath, log); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	if isEmpty, err := checkFileEmpty(absPath, log); err != nil {
-		return "", err
+		return "", false, err
 	} else if isEmpty {
 		log.Info().Str("path", absPath).Msg("File is empty - starting with empty storage")
-		return absPath, nil
+		return absPath, true, nil
 	}
 
 	loadedCount, err := loadURLsFromFile(ctx, absPath, storage, log)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	return generateLoadResultMessage(loadedCount, absPath, log)
+	msg, err := generateLoadResultMessage(loadedCount, absPath, log)
+	return msg, false, err
 }
 
 // Save saves URLs from storage to file
@@ -124,13 +127,6 @@ func logAndWrapError(log zerolog.Logger, err error, wrapErr error, context strin
 }
 
 // Helper functions for Load
-
-func handleEmptyFilePath(log zerolog.Logger) (string, error) {
-	msg := "No file path provided - using empty storage"
-	log.Info().Msg(msg)
-	return msg, nil
-}
-
 func getAbsolutePath(path string) (string, error) {
 	return filepath.Abs(path)
 }

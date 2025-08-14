@@ -185,7 +185,7 @@ func initPostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 		return
 	}
 
-	path, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
+	path, isEmpty, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
 	if err != nil {
 		log.
 			Error().
@@ -195,10 +195,13 @@ func initPostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 		return
 	}
 
-	log.
-		Info().
-		Str("path", path).
-		Msg("Data loaded successfully from file to PostgreSQL")
+	// Выводим сообщение только если файл не был пустым
+	if !isEmpty {
+		log.
+			Info().
+			Str("path", path).
+			Msg("Data loaded successfully from file to PostgreSQL")
+	}
 }
 
 func savePostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *postgres.PostgresStorage) {
@@ -234,7 +237,7 @@ func initInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 		return
 	}
 
-	path, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
+	path, isEmpty, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
 	if err != nil {
 		log.
 			Error().
@@ -244,10 +247,13 @@ func initInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 		return
 	}
 
-	log.
-		Info().
-		Str("path", path).
-		Msg("Data loaded successfully from file to in-memory storage")
+	// Выводим сообщение только если файл не был пустым
+	if !isEmpty {
+		log.
+			Info().
+			Str("path", path).
+			Msg("Data loaded successfully from file to in-memory storage")
+	}
 }
 
 func saveInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *inmemory.InmemoryStorage) {

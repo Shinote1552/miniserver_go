@@ -14,7 +14,7 @@ import (
 type URLStorage interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
 	ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
-	ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
+	ShortenedLinkGetByOriginalURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
 	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
@@ -78,7 +78,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 	}
 
 	// Проверяем существование URL
-	existing, err := s.storage.ShortenedLinkGetByLongURL(ctx, longUrl)
+	existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, longUrl)
 	if err == nil {
 		return existing, models.ErrConflict
 	}
@@ -91,15 +91,15 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 
 	// Создаем новую запись
 	newURL := models.ShortenedLink{
-		LongURL:   longUrl,
-		ShortCode: token,
-		CreatedAt: time.Now().UTC(),
+		OriginalURL: longUrl,
+		ShortCode:   token,
+		CreatedAt:   time.Now().UTC(),
 	}
 
 	createdURL, err := s.storage.ShortenedLinkCreate(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
-			existing, err := s.storage.ShortenedLinkGetByLongURL(ctx, longUrl)
+			existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, longUrl)
 			if err != nil {
 				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
@@ -120,7 +120,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 	// Проверяем существующие URL
 	longUrls := make([]string, len(urls))
 	for i, url := range urls {
-		longUrls[i] = url.LongURL
+		longUrls[i] = url.OriginalURL
 	}
 
 	existingURLs, err := s.storage.ShortenedLinkBatchExists(ctx, longUrls)
@@ -130,7 +130,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 
 	existingMap := make(map[string]models.ShortenedLink)
 	for _, url := range existingURLs {
-		existingMap[url.LongURL] = url
+		existingMap[url.OriginalURL] = url
 	}
 
 	var (
@@ -141,7 +141,7 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 
 	// Формируем результат для существующих URL
 	for _, url := range urls {
-		if existingURL, exists := existingMap[url.LongURL]; exists {
+		if existingURL, exists := existingMap[url.OriginalURL]; exists {
 			result = append(result, existingURL)
 		} else {
 			// Генерируем короткий ключ для новых URL
