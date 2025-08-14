@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"time"
 	"urlshortener/domain/models"
@@ -63,21 +64,51 @@ func NewServiceURLShortener(storage URLStorage, baseURL string) *URLShortener {
 }
 
 // DeleteURLs помечает URL как удаленные (асинхронно)
-func (s *URLShortener) DeleteURLs(ctx context.Context, userID int64, shortURLs []string) error {
+func (s *URLShortener) DeleteURLs(ctx context.Context, userID int64, shortURLs []string) ([]string, []string, error) {
 	if userID <= 0 {
-		return fmt.Errorf("invalid user ID")
+		return nil, nil, fmt.Errorf("%w: invalid user ID", models.ErrInvalidData)
 	}
 
 	if len(shortURLs) == 0 {
-		return fmt.Errorf("empty URLs list")
+		return nil, nil, fmt.Errorf("%w: empty URLs list", models.ErrInvalidData)
+	}
+
+	// Разделяем URL на существующие/принадлежащие пользователю и остальные
+	var toDelete, notFoundOrNotOwned []string
+
+	// Проверяем каждый URL
+	for _, shortKey := range shortURLs {
+		url, err := s.storage.ShortenedLinkGetByShortKey(ctx, shortKey)
+		switch {
+		case errors.Is(err, models.ErrUnfound):
+			notFoundOrNotOwned = append(notFoundOrNotOwned, shortKey)
+		case errors.Is(err, models.ErrDeleted):
+			notFoundOrNotOwned = append(notFoundOrNotOwned, shortKey)
+		case err != nil:
+			return nil, nil, fmt.Errorf("failed to check URL %s: %w", shortKey, err)
+		case url.UserID != userID:
+			notFoundOrNotOwned = append(notFoundOrNotOwned, shortKey)
+		default:
+			toDelete = append(toDelete, shortKey)
+		}
+	}
+
+	if len(toDelete) == 0 {
+		return nil, notFoundOrNotOwned, models.ErrUnfound
 	}
 
 	// Асинхронное удаление
 	go func() {
-		_ = s.storage.DeleteURLsBatch(context.Background(), userID, shortURLs)
+		if err := s.storage.DeleteURLsBatch(context.Background(), userID, toDelete); err != nil {
+			log.Printf("Failed to delete URLs: %v", err)
+		}
 	}()
 
-	return nil
+	if len(notFoundOrNotOwned) > 0 {
+		return toDelete, notFoundOrNotOwned, models.ErrPartialDeletion
+	}
+
+	return toDelete, nil, nil
 }
 
 // GetURL возвращает оригинальный URL по короткому ключу

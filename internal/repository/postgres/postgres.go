@@ -76,7 +76,6 @@ func createTable(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// internal/repository/postgres/storage.go
 func (p *PostgresStorage) DeleteURLsBatch(ctx context.Context, userID int64, shortURLs []string) error {
 	if len(shortURLs) == 0 {
 		return nil
@@ -84,32 +83,37 @@ func (p *PostgresStorage) DeleteURLsBatch(ctx context.Context, userID int64, sho
 
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("ошибка начала транзакции: %w", err)
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		UPDATE urls 
-		SET is_deleted = TRUE 
-		WHERE short_key = $1 AND user_id = $2`)
+        UPDATE urls 
+        SET is_deleted = TRUE 
+        WHERE short_key = $1 AND user_id = $2 AND is_deleted = FALSE`)
 	if err != nil {
-		return fmt.Errorf("ошибка подготовки запроса: %w", err)
+		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, shortKey := range shortURLs {
-		if _, err := stmt.ExecContext(ctx, shortKey, userID); err != nil {
-			return fmt.Errorf("ошибка удаления URL%s:: %w", shortKey, err)
+		res, err := stmt.ExecContext(ctx, shortKey, userID)
+		if err != nil {
+			return fmt.Errorf("failed to delete URL %s: %w", shortKey, err)
+		}
+
+		// Проверяем, что действительно обновили запись
+		if rows, _ := res.RowsAffected(); rows == 0 {
+			return fmt.Errorf("%w: url %s not found or already deleted", models.ErrUnfound, shortKey)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("ошибка коммита транзакции: %w", err)
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
 }
-
 func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
 
 	userDB := dto.UserDBFromDomain(user)

@@ -22,9 +22,11 @@ type (
 )
 
 var (
-	ErrInvalidData = errors.New("invalid input data")
-	ErrUnfound     = errors.New("unfound data")
-	ErrEmpty       = errors.New("storage is empty")
-	ErrConflict    = errors.New("duplicate URL")
-	ErrDeleted     = errors.New("url is deleted")
+	ErrInvalidData     = errors.New("invalid input data")
+	ErrUnfound         = errors.New("url not found")
+	ErrEmpty           = errors.New("storage is empty")
+	ErrConflict        = errors.New("duplicate URL")
+	ErrDeleted         = errors.New("url is already deleted")
+	ErrNotOwner        = errors.New("user is not owner of url")
+	ErrPartialDeletion = errors.New("some urls were not deleted")
 )
