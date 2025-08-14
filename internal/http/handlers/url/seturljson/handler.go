@@ -11,7 +11,7 @@ import (
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
+	SetURL(ctx context.Context, model models.ShortenedLink) (models.ShortenedLink, error)
 }
 
 func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
@@ -20,6 +20,12 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 
 		if r.Method != http.MethodPost {
 			httputils.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		userID, ok := ctx.Value("user_id").(int64)
+		if !ok || userID == 0 {
+			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
@@ -34,28 +40,20 @@ func HandlerSetURLJson(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 			return
 		}
 
-		urlModel, err := svc.SetURL(ctx, req.URL)
+		model := dto.ShortenedLinkSingleRequestToDomain(req, userID)
+		urlModel, err := svc.SetURL(ctx, model)
+
 		if err != nil {
 			if errors.Is(err, httputils.ErrConflict) {
-				res := dto.ShortenedLinkSingleResponse{
-					Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode),
-				}
-				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(res)
+				resp := dto.ShortenedLinkSingleResponseFromDomain(urlModel, urlroot)
+				httputils.WriteJSONResponse(w, http.StatusConflict, resp)
 				return
 			}
-			httputils.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			httputils.WriteJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		res := dto.ShortenedLinkSingleResponse{Result: httputils.BuildShortURL(urlroot, urlModel.ShortCode)}
-
-		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-		w.WriteHeader(http.StatusCreated)
-		if err := json.NewEncoder(w).Encode(res); err != nil {
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to encode response")
-			return
-		}
+		resp := dto.ShortenedLinkSingleResponseFromDomain(urlModel, urlroot)
+		httputils.WriteJSONResponse(w, http.StatusCreated, resp)
 	}
 }

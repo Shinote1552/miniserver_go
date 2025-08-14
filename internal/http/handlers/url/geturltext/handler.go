@@ -13,12 +13,6 @@ type ServiceURLShortener interface {
 	GetURL(ctx context.Context, shortKey string) (models.ShortenedLink, error)
 }
 
-func writeTextPlainError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", httputils.MIMETextPlain)
-	w.WriteHeader(status)
-	w.Write([]byte(message))
-}
-
 func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -26,11 +20,9 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 
 		url, err := svc.GetURL(ctx, id)
 		if err != nil {
-			writeTextPlainError(w, http.StatusBadRequest, fmt.Sprintf("GetURL Error(): %v", err))
+			httputils.WriteTextError(w, http.StatusBadRequest, fmt.Sprintf("GetURL Error(): %v", err))
 			return
 		}
-
-		w.Header().Set("Location", url.OriginalURL)
-		w.WriteHeader(http.StatusTemporaryRedirect)
+		httputils.WriteRedirect(w, url.OriginalURL, false)
 	}
 }

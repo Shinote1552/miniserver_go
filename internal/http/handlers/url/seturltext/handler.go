@@ -6,16 +6,28 @@ import (
 	"io"
 	"net/http"
 	"urlshortener/domain/models"
+	"urlshortener/internal/http/dto"
 	"urlshortener/internal/http/httputils"
 )
 
 type ServiceURLShortener interface {
-	SetURL(ctx context.Context, longUrl string) (models.ShortenedLink, error)
+	SetURL(ctx context.Context, model models.ShortenedLink) (models.ShortenedLink, error)
 }
 
 func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		if r.Method != http.MethodPost {
+			httputils.WriteTextError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		userID, ok := ctx.Value("user_id").(int64)
+		if !ok || userID == 0 {
+			httputils.WriteTextError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -24,26 +36,29 @@ func HandlerSetURLText(svc ServiceURLShortener, urlroot string) http.HandlerFunc
 		}
 		defer r.Body.Close()
 
-		url := string(body)
-		if url == "" {
+		req := dto.ShortenedLinkTextRequest{
+			URL: string(body),
+		}
+
+		if req.URL == "" {
 			httputils.WriteTextError(w, http.StatusBadRequest, httputils.ErrInvalidData.Error())
 			return
 		}
 
-		urlModel, err := svc.SetURL(ctx, url)
+		model := dto.ShortenedLinkTextRequestToDomain(req, userID)
+		urlModel, err := svc.SetURL(ctx, model)
+
 		if err != nil {
 			if errors.Is(err, httputils.ErrConflict) {
-				w.Header().Set("Content-Type", httputils.MIMETextPlain)
-				w.WriteHeader(http.StatusConflict)
-				w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortCode)))
+				resp := dto.ShortenedLinkTextResponseFromDomain(urlModel, urlroot)
+				httputils.WriteTextResponse(w, http.StatusConflict, resp.ShortURL)
 				return
 			}
 			httputils.WriteTextError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
-		w.Header().Set("Content-Type", httputils.MIMETextPlain)
-		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(httputils.BuildShortURL(urlroot, urlModel.ShortCode)))
+		resp := dto.ShortenedLinkTextResponseFromDomain(urlModel, urlroot)
+		httputils.WriteTextResponse(w, http.StatusCreated, resp.ShortURL)
 	}
 }

@@ -8,6 +8,12 @@ import (
 
 // Request types
 type (
+
+	// ShortenedLinkTextRequest представляет DTO для текстового запроса на сокращение URL
+	ShortenedLinkTextRequest struct {
+		URL string
+	}
+
 	ShortenedLinkSingleRequest struct {
 		URL string `json:"url"`
 	}
@@ -20,6 +26,11 @@ type (
 
 // Response types
 type (
+
+	// ShortenedLinkTextResponse представляет DTO для текстового ответа с сокращенным URL
+	ShortenedLinkTextResponse struct {
+		ShortURL string
+	}
 
 	// Для POST /api/shorten/batch
 	ShortenedLinkBatchCreateResponse struct {
@@ -47,15 +58,33 @@ type (
 	}
 )
 
-func ShortenedLinkSingleRequestToDomain(r ShortenedLinkSingleRequest) models.ShortenedLink {
+// ShortenedLinkTextRequestToDomain преобразует текстовый запрос в доменную модель
+func ShortenedLinkTextRequestToDomain(r ShortenedLinkTextRequest, userID int64) models.ShortenedLink {
 	return models.ShortenedLink{
 		OriginalURL: r.URL,
+		UserID:      userID,
+		CreatedAt:   time.Now().UTC(),
 	}
 }
 
-func ShortenedLinkSingleResponseFromDomain(url models.ShortenedLink, baseURL string) ShortenedLinkSingleResponse {
+// ShortenedLinkTextResponseFromDomain создает текстовый ответ из доменной модели
+func ShortenedLinkTextResponseFromDomain(model models.ShortenedLink, baseURL string) ShortenedLinkTextResponse {
+	return ShortenedLinkTextResponse{
+		ShortURL: baseURL + "/" + model.ShortCode,
+	}
+}
+
+func ShortenedLinkSingleRequestToDomain(r ShortenedLinkSingleRequest, userID int64) models.ShortenedLink {
+	return models.ShortenedLink{
+		OriginalURL: r.URL,
+		UserID:      userID,
+		CreatedAt:   time.Now().UTC(),
+	}
+}
+
+func ShortenedLinkSingleResponseFromDomain(model models.ShortenedLink, baseURL string) ShortenedLinkSingleResponse {
 	return ShortenedLinkSingleResponse{
-		Result: baseURL + "/" + url.ShortCode,
+		Result: baseURL + "/" + model.ShortCode,
 	}
 }
 

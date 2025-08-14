@@ -84,6 +84,7 @@ func (s *Server) setupRoutes() {
 	/*
 		Public routes (without auth)
 	*/
+
 	s.router.HandleFunc("/ping", getping.HandlerPing(s.urlService)).Methods("GET")
 	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.urlService)).Methods("GET") // 307
 	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                   // 400

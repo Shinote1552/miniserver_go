@@ -72,13 +72,13 @@ func (s *URLShortener) GetShortURL(shortKey string) string {
 }
 
 // SetURL создает новую короткую ссылку или возвращает существующую
-func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.ShortenedLink, error) {
-	if longUrl == "" {
+func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (models.ShortenedLink, error) {
+	if model.OriginalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
 	// Проверяем существование URL
-	existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, longUrl)
+	existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
 	if err == nil {
 		return existing, models.ErrConflict
 	}
@@ -91,7 +91,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 
 	// Создаем новую запись
 	newURL := models.ShortenedLink{
-		OriginalURL: longUrl,
+		OriginalURL: model.OriginalURL,
 		ShortCode:   token,
 		CreatedAt:   time.Now().UTC(),
 	}
@@ -99,7 +99,7 @@ func (s *URLShortener) SetURL(ctx context.Context, longUrl string) (models.Short
 	createdURL, err := s.storage.ShortenedLinkCreate(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
-			existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, longUrl)
+			existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
 			if err != nil {
 				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
 			}
