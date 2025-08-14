@@ -45,7 +45,7 @@ func WriteJSONError(w http.ResponseWriter, status int, message string) {
 	}{Error: message})
 }
 
-func WriteJSONResponse(w http.ResponseWriter, status int, data interface{}) {
+func WriteJSONResponse(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", MIMEApplicationJSON)
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)

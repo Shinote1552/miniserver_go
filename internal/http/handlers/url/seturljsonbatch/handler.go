@@ -24,54 +24,43 @@ func HandlerSetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 			return
 		}
 
-		// сопостовляем по OriginalURL и сохроняем порядок corelation_id: corelation_id/url - corelation_id/key
 		requestMap := make(map[string]dto.ShortenedLinkBatchRequest, len(requestBatch))
 		urls := make([]models.ShortenedLink, 0, len(requestBatch))
 
 		for _, req := range requestBatch {
-			requestMap[req.LongURL] = req
+			requestMap[req.OriginalURL] = req
 			urls = append(urls, models.ShortenedLink{
-				LongURL: req.LongURL,
+				LongURL: req.OriginalURL,
 			})
 		}
 
 		createdURLs, err := svc.BatchCreate(ctx, urls)
 		if err != nil {
 			if errors.Is(err, models.ErrConflict) {
-				// Формируем ответ при ErrConflict
-				responseMap := make([]dto.BatchShortenResponse, 0, len(requestBatch))
+				response := dto.ShortenedLinkBatchCreateResponseFromDomains(createdURLs, urlroot)
 
-				for _, url := range createdURLs {
-					if req, exists := requestMap[url.LongURL]; exists {
-						responseMap = append(responseMap, dto.BatchShortenResponse{
-							CorrelationID: req.CorrelationID,
-							ShortURL:      httputils.BuildShortURL(urlroot, url.ShortCode),
-						})
+				// Сопоставлем по correlation_id // можно будет в функцию вывести
+				for i := range response {
+					if req, exists := requestMap[createdURLs[i].LongURL]; exists {
+						response[i].CorrelationID = req.CorrelationID
 					}
 				}
-
-				w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(responseMap)
+				httputils.WriteJSONResponse(w, http.StatusConflict, response)
 				return
 			}
 			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to process batch")
 			return
 		}
 
-		// Формируем ответ
-		responseMap := make([]dto.BatchShortenResponse, 0, len(requestBatch))
-		for _, url := range createdURLs {
-			if req, exists := requestMap[url.LongURL]; exists {
-				responseMap = append(responseMap, dto.BatchShortenResponse{
-					CorrelationID: req.CorrelationID,
-					ShortURL:      httputils.BuildShortURL(urlroot, url.ShortCode),
-				})
+		response := dto.ShortenedLinkBatchCreateResponseFromDomains(createdURLs, urlroot)
+
+		// Сопоставлем по correlation_id // можно будет в функцию вывести
+		for i := range response {
+			if req, exists := requestMap[createdURLs[i].LongURL]; exists {
+				response[i].CorrelationID = req.CorrelationID
 			}
 		}
 
-		w.Header().Set("Content-Type", httputils.MIMEApplicationJSON)
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(responseMap)
+		httputils.WriteJSONResponse(w, http.StatusCreated, response)
 	}
 }

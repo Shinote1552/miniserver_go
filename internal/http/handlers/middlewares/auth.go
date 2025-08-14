@@ -30,7 +30,8 @@ func MiddlewareAuth(auth Authentication) func(http.Handler) http.Handler {
 			}
 
 			// 2. Если куки нет или она невалидна - создаем нового пользователя
-			authUser, tokenString, tokenExpiry, registerErr := auth.Register(ctx, models.User{})
+			var authUser models.User
+			authUser, tokenString, tokenExpiry, registerErr := auth.Register(ctx, authUser)
 			if registerErr != nil {
 				http.Error(w, "Authentication failed", http.StatusInternalServerError)
 				return
