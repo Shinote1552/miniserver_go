@@ -55,23 +55,23 @@ func initLogger() zerolog.Logger {
 	}
 
 	output.FormatMessage = func(i interface{}) string {
-		return fmt.Sprintf("\x1b[1m%s\x1b[0m", i) // жирный текст
+		return fmt.Sprintf("\x1b[1m%s\x1b[0m", i)
 	}
 
 	output.FormatFieldName = func(i interface{}) string {
-		return fmt.Sprintf("\x1b[36m%s:\x1b[0m", i) // голубой
+		return fmt.Sprintf("\x1b[36m%s:\x1b[0m", i)
 	}
 
 	output.FormatFieldValue = func(i interface{}) string {
-		return fmt.Sprintf("\x1b[32m%s\x1b[0m", i) // зелёный
+		return fmt.Sprintf("\x1b[32m%s\x1b[0m", i)
 	}
 
-	// Настройка имен полей
-	zerolog.TimestampFieldName = "t"
-	zerolog.LevelFieldName = "l"
-	zerolog.MessageFieldName = "m"
-	zerolog.CallerFieldName = "c"
-	zerolog.ErrorFieldName = "e"
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	zerolog.CallerSkipFrameCount = 2
 
-	return zerolog.New(output).With().Timestamp().Caller().Logger()
+	return zerolog.New(output).
+		With().
+		Timestamp().
+		Caller().
+		Logger()
 }

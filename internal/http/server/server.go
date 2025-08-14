@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"time"
-	"urlshortener/domain/models"
 	"urlshortener/domain/services"
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/handlers/middlewares"
 	"urlshortener/internal/http/handlers/system/getping"
 	"urlshortener/internal/http/handlers/url/getdefault"
+	"urlshortener/internal/http/handlers/url/geturljsonbatch"
 	"urlshortener/internal/http/handlers/url/geturltext"
 	"urlshortener/internal/http/handlers/url/seturljson"
 	"urlshortener/internal/http/handlers/url/seturljsonbatch"
@@ -20,24 +20,24 @@ import (
 	"github.com/rs/zerolog"
 )
 
-//go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
-type URLShortener interface {
-	GetURL(context.Context, string) (models.ShortenedLink, error)
-	SetURL(context.Context, string) (models.ShortenedLink, error)
-	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-	PingDataBase(context.Context) error
-}
+// //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
+// type URLShortener interface {
+// 	GetURL(context.Context, string) (models.ShortenedLink, error)
+// 	SetURL(context.Context, string) (models.ShortenedLink, error)
+// 	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
+// 	PingDataBase(context.Context) error
+// }
 
 type Server struct {
 	httpServer  *http.Server
 	router      *mux.Router
 	log         *zerolog.Logger
 	authService *services.Authentication
-	urlService  URLShortener
+	urlService  *services.URLShortener
 	cfg         config.Config
 }
 
-func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth *services.Authentication) (*Server, error) {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc *services.URLShortener, auth *services.Authentication) (*Server, error) {
 
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и
@@ -78,10 +78,6 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc URLShortener, auth *s
 
 func (s *Server) setupRoutes() {
 
-	/*
-	 нужно будет в одну группу назначить(все запросы post, и один GET /api/user/urls) и привязать к middleware auth
-	*/
-
 	s.router.Use(middlewares.MiddlewareLogging(s.log))
 	s.router.Use(middlewares.MiddlewareCompressing())
 
@@ -99,12 +95,15 @@ func (s *Server) setupRoutes() {
 	authRouter.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
 	authRouter.HandleFunc("/api/shorten", seturljson.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                 // 201
 	authRouter.HandleFunc("/", seturltext.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                            // 201
-	// authRouter.HandleFunc("/api/user/urls", yourHandlerFunction).Methods("GET")
+	authRouter.HandleFunc("/api/user/urls", geturljsonbatch.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
 
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	s.log.Info().Str("address", s.cfg.ServerAddress).Msg("Starting server")
+	s.log.
+		Info().
+		Str("address", s.cfg.ServerAddress).
+		Msg("Starting server")
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
@@ -113,5 +112,8 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.log.
+		Info().
+		Msg("Shutting down server")
 	return s.httpServer.Shutdown(ctx)
 }

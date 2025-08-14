@@ -3,14 +3,14 @@ package middlewares
 import (
 	"context"
 	"net/http"
+	"time"
 	"urlshortener/domain/models"
 )
 
 //go:generate mockgen
 type Authentication interface {
-	Register(ctx context.Context, user models.User) (models.User, string, error)
+	Register(ctx context.Context, user models.User) (models.User, string, time.Time, error)
 	ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
-	GetUserLinks(ctx context.Context, jwtToken string) ([]models.ShortenedLink, error)
 }
 
 func MiddlewareAuth(auth Authentication) func(http.Handler) http.Handler {
@@ -18,25 +18,36 @@ func MiddlewareAuth(auth Authentication) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			var user models.User
-			var tokenString string
-			var err error
-
-			cookie, err := r.Cookie("auth_token")
-			if err == nil {
-				tokenString = cookie.Value
-				user, err = auth.ValidateAndGetUser(ctx, tokenString)
+			// 1. Пытаемся получить валидного пользователя из куки
+			cookie, cookieErr := r.Cookie("auth_token")
+			if cookieErr == nil && cookie.Value != "" {
+				authUser, validateErr := auth.ValidateAndGetUser(ctx, cookie.Value)
+				if validateErr == nil {
+					ctx = context.WithValue(ctx, "user_id", authUser.ID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
 			}
 
-			if err != nil {
-				user, tokenString, err = auth.Register(ctx)
+			// 2. Если куки нет или она невалидна - создаем нового пользователя
+			authUser, tokenString, tokenExpiry, registerErr := auth.Register(ctx, models.User{})
+			if registerErr != nil {
+				http.Error(w, "Authentication failed", http.StatusInternalServerError)
+				return
 			}
 
-			/*
-				увидел вот такуб идею еще:
-				Добавляем пользователя в контекст
-				ctx := context.WithValue(r.Context(), "user", user)
-			*/
+			http.SetCookie(w, &http.Cookie{
+				Name:     "auth_token",
+				Value:    tokenString,
+				Path:     "/",
+				Expires:  tokenExpiry,
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+				// Надо будет пробывать SameSiteStrictMode
+			})
+
+			ctx = context.WithValue(ctx, "user_id", authUser.ID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

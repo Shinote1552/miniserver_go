@@ -26,6 +26,10 @@ type (
 		CorrelationID string `json:"correlation_id"`
 		ShortURL      string `json:"short_url"`
 	}
+	BatchShortenResponse struct {
+		ShortURL string `json:"short_url"`
+		LongURL  string `json:"original_url"`
+	}
 
 	ErrorResponse struct {
 		Error string `json:"error"`

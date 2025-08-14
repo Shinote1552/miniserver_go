@@ -13,7 +13,6 @@ import (
 type UserStorage interface {
 	UserCreate(ctx context.Context, user models.User) (models.User, error)
 	UserGetByID(ctx context.Context, id int64) (models.User, error)
-	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 }
 
 type Authentication struct {
@@ -35,27 +34,20 @@ func NewAuthentication(userStorage UserStorage, secretKey string, accessExp time
 	}, nil
 }
 
-func (a *Authentication) Register(ctx context.Context, user models.User) (models.User, string, error) {
-	// надо ли добавлять валидацию сюда?
-	// if user.ID != 0{
-	// 	return  user,
-	// }
-
+func (a *Authentication) Register(ctx context.Context, user models.User) (models.User, string, time.Time, error) {
 	user.CreatedAt = time.Now().UTC()
 
 	createdUser, err := a.storage.UserCreate(ctx, user)
 	if err != nil {
-		return user, "", fmt.Errorf("failed to create user: %w", err)
+		return user, "", time.Time{}, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	jwtToken, err := a.jwtGenerate(createdUser.ID)
+	jwtToken, tokenExpiry, err := a.jwtGenerate(createdUser.ID)
 	if err != nil {
-		// надо ли удлаить юзера из за ошибки генерации токена?
-		return createdUser, "", fmt.Errorf("failed to generate token: %w", err)
+		return createdUser, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	return createdUser, jwtToken, nil
-
+	return createdUser, jwtToken, tokenExpiry, nil
 }
 
 func (a *Authentication) ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error) {
@@ -72,42 +64,28 @@ func (a *Authentication) ValidateAndGetUser(ctx context.Context, jwtToken string
 	return user, nil
 }
 
-func (a *Authentication) GetUserLinks(ctx context.Context, jwtToken string) ([]models.ShortenedLink, error) {
-	userID, err := a.getUserId(jwtToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate token: %w", err)
-	}
-
-	userLinks, err := a.storage.ShortenedLinkGetBatchByUser(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get links: %w", err)
-	}
-
-	return userLinks, nil
-
-}
-
 type Claims struct {
 	jwt.RegisteredClaims
 	UserID int64
 }
 
-func (a *Authentication) jwtGenerate(userID int64) (string, error) {
+func (a *Authentication) jwtGenerate(userID int64) (string, time.Time, error) {
+	expiryTime := time.Now().Add(a.accessExp)
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(a.accessExp)),
+			ExpiresAt: jwt.NewNumericDate(expiryTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 		UserID: userID,
 	}
-	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	jwtToken, err := newToken.SignedString([]byte(a.secretKey))
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 
-	return jwtToken, nil
+	return jwtToken, expiryTime, nil
 }
 
 // Одновременно здесь происходит валидация токена

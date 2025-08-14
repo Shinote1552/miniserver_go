@@ -15,6 +15,7 @@ type URLStorage interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
 	ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
 	ShortenedLinkGetByLongURL(ctx context.Context, originalURL string) (models.ShortenedLink, error)
+	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 	Ping(ctx context.Context) error
@@ -24,6 +25,21 @@ type URLStorage interface {
 type URLShortener struct {
 	storage URLStorage
 	baseURL string
+}
+
+func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
+
+	if userID <= 0 {
+		return nil, fmt.Errorf("failed to validate userID")
+	}
+
+	userLinks, err := s.storage.ShortenedLinkGetBatchByUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get links: %w", err)
+	}
+
+	return userLinks, nil
+
 }
 
 // NewServiceURLShortener создает новый экземпляр сервиса
