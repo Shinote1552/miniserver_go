@@ -7,26 +7,20 @@ import (
 	"time"
 	"urlshortener/domain/services"
 	"urlshortener/internal/config"
-	"urlshortener/internal/http/handlers/middlewares"
-	"urlshortener/internal/http/handlers/system/getping"
-	"urlshortener/internal/http/handlers/url/getdefault"
-	"urlshortener/internal/http/handlers/url/geturljsonbatch"
-	"urlshortener/internal/http/handlers/url/geturltext"
-	"urlshortener/internal/http/handlers/url/seturljson"
-	"urlshortener/internal/http/handlers/url/seturljsonbatch"
-	"urlshortener/internal/http/handlers/url/seturltext"
+	"urlshortener/internal/http/handlers/middlewares/auth"
+	"urlshortener/internal/http/handlers/middlewares/compressor"
+	"urlshortener/internal/http/handlers/middlewares/logger"
+	"urlshortener/internal/http/handlers/system/ping"
+	"urlshortener/internal/http/handlers/url/create_json"
+	"urlshortener/internal/http/handlers/url/create_json_batch"
+	"urlshortener/internal/http/handlers/url/create_text"
+	"urlshortener/internal/http/handlers/url/find_by_id"
+	"urlshortener/internal/http/handlers/url/get_default"
+	"urlshortener/internal/http/handlers/url/list_user_urls"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 )
-
-// //go:generate mockgen -destination=mocks/url_shortener_mock.go -package=mocks urlshortener/internal/deps ServiceURLShortener
-// type URLShortener interface {
-// 	GetURL(context.Context, string) (models.ShortenedLink, error)
-// 	SetURL(context.Context, string) (models.ShortenedLink, error)
-// 	BatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
-// 	PingDataBase(context.Context) error
-// }
 
 type Server struct {
 	httpServer  *http.Server
@@ -78,26 +72,25 @@ func NewServer(log *zerolog.Logger, cfg config.Config, svc *services.URLShortene
 
 func (s *Server) setupRoutes() {
 
-	s.router.Use(middlewares.MiddlewareLogging(s.log))
-	s.router.Use(middlewares.MiddlewareCompressing())
+	s.router.Use(logger.MiddlewareLogging(s.log))
+	s.router.Use(compressor.MiddlewareCompressing())
 
 	/*
 		Public routes (without auth)
 	*/
 
-	s.router.HandleFunc("/ping", getping.HandlerPing(s.urlService)).Methods("GET")
-	s.router.HandleFunc("/{id}", geturltext.HandlerGetURLWithID(s.urlService)).Methods("GET") // 307
-	s.router.HandleFunc("/", getdefault.HandlerGetDefault()).Methods("GET")                   // 400
+	s.router.HandleFunc("/ping", ping.HandlerPing(s.urlService)).Methods("GET")
+	s.router.HandleFunc("/{id}", find_by_id.HandlerGetURLWithID(s.urlService)).Methods("GET") // 307
+	s.router.HandleFunc("/", get_default.HandlerGetDefault()).Methods("GET")                  // 400
 
 	authRouter := s.router.PathPrefix("/").Subrouter()
-	authRouter.Use(middlewares.MiddlewareAuth(s.authService))
+	authRouter.Use(auth.MiddlewareAuth(s.authService))
 
 	// Protected routes (with auth)
-	authRouter.HandleFunc("/api/shorten/batch", seturljsonbatch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
-	authRouter.HandleFunc("/api/shorten", seturljson.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                 // 201
-	authRouter.HandleFunc("/", seturltext.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                            // 201
-	authRouter.HandleFunc("/api/user/urls", geturljsonbatch.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
-
+	authRouter.HandleFunc("/api/shorten/batch", create_json_batch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
+	authRouter.HandleFunc("/api/shorten", create_json.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                  // 201
+	authRouter.HandleFunc("/", create_text.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                             // 201
+	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
 }
 
 func (s *Server) Start(ctx context.Context) error {

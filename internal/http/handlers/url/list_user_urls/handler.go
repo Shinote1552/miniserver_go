@@ -1,4 +1,4 @@
-package geturljsonbatch
+package list_user_urls
 
 import (
 	"context"

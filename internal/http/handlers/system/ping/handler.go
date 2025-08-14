@@ -1,4 +1,4 @@
-package getping
+package ping
 
 import (
 	"context"

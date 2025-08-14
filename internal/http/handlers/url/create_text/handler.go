@@ -1,4 +1,4 @@
-package seturltext
+package create_text
 
 import (
 	"context"

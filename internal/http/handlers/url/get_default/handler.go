@@ -1,4 +1,4 @@
-package getdefault
+package get_default
 
 import (
 	"fmt"

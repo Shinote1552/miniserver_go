@@ -1,4 +1,4 @@
-package seturljsonbatch
+package create_json_batch
 
 import (
 	"context"

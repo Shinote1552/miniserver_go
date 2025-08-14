@@ -1,4 +1,4 @@
-package seturljson
+package create_json
 
 import (
 	"context"
