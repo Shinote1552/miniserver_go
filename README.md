@@ -149,9 +149,18 @@ curl http://localhost:8080/ping
 # Сокращение URL, в ответ возвращается JWT токен, нужно в каждый POST запрос прикладывать свой JWT токен для идентификации, иначе при `GET /api/user/urls` мы не сможем получить все данные
 curl -X POST http://localhost:8080/api/shorten \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com"}'
+  -d '{"url":"https://example.com"}' \
+  -d "auth_token=USER_JWT"
 
-# Получение своих URL по токену который выдан уникальному пользователю
+
+curl -X POST http://localhost:8080/api/shorten/batch \
+  -H "Content-Type: application/json" \
+  -d '[{"correlation_id": "1", "original_url": "https://ya.ru"}]'
+  -d "auth_token=USER_JWT"
+
+# Получение своих URL по токену который выдан уникальному пользователю/JWT
 curl http://localhost:8080/api/user/urls \
-  -H "Cookie: auth_token=your_token"
+  -H "Cookie: auth_token=your_token" \
+  -d "auth_token=USER_JWT"
+
 ```
