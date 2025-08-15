@@ -88,7 +88,12 @@ func (s *URLShortener) GetShortURL(shortKey string) string {
 
 // SetURL создает новую короткую ссылку или возвращает существующую
 func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (models.ShortenedLink, error) {
+	// Проверка обязательных полей
 	if model.OriginalURL == "" {
+		return models.ShortenedLink{}, models.ErrInvalidData
+	}
+
+	if model.UserID <= 0 {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
@@ -104,10 +109,11 @@ func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (
 		return models.ShortenedLink{}, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	// Создаем новую запись
+	// Создаем новую запись с ВСЕМИ необходимыми полями
 	newURL := models.ShortenedLink{
 		OriginalURL: model.OriginalURL,
 		ShortCode:   token,
+		UserID:      model.UserID, // Важно сохранить UserID!
 		CreatedAt:   time.Now().UTC(),
 	}
 
