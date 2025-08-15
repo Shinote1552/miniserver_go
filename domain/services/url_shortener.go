@@ -8,7 +8,7 @@ import (
 	"math/big"
 	"time"
 	"urlshortener/domain/models"
-	"urlshortener/internal/repository/postgres"
+	"urlshortener/internal/repository/dto"
 )
 
 // URLStorage - основной интерфейс хранилища URL и shotURL
@@ -24,7 +24,7 @@ type URLStorage interface {
 	/*
 		DEBUG
 	*/
-	GetAllWithUsers(ctx context.Context) ([]postgres.FullURLInfo, error)
+	GetAllWithUsers(ctx context.Context) ([]dto.FullURLInfo, error)
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
@@ -33,7 +33,7 @@ type URLShortener struct {
 	baseURL string
 }
 
-func (s *URLShortener) GetAllWithUsers(ctx context.Context) ([]postgres.FullURLInfo, error) {
+func (s *URLShortener) GetAllWithUsers(ctx context.Context) ([]dto.FullURLInfo, error) {
 	users, err := s.storage.GetAllWithUsers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to GetAllWithUsers: %w", err)
@@ -45,12 +45,12 @@ func (s *URLShortener) GetAllWithUsers(ctx context.Context) ([]postgres.FullURLI
 func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
 
 	if userID <= 0 {
-		return nil, fmt.Errorf("failed to validate userID")
+		return nil, fmt.Errorf("failed to validate userID: " + string(userID))
 	}
 
 	userLinks, err := s.storage.ShortenedLinkGetBatchByUser(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get links: %w", err)
+		return nil, fmt.Errorf("failed to get links: %w, userID: "+string(userID), err)
 	}
 
 	return userLinks, nil

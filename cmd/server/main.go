@@ -53,25 +53,25 @@ func main() {
 			}
 		}
 	}
-	// if urlService == nil || authService == nil {
-	// 	log.
-	// 		Info().
-	// 		Msg("Using in-memory storage as fallback")
+	if urlService == nil || authService == nil {
+		log.
+			Info().
+			Msg("Using in-memory storage as fallback")
 
-	// 	storage := initInMemory(log)
-	// 	defer closeInMemoryStorage(log, storage)
-	// 	defer saveInMemoryData(ctxRoot, log, *cfg, storage)
-	// 	initInMemoryData(ctxRoot, log, *cfg, storage)
+		storage := initInMemory(log)
+		defer closeInMemoryStorage(log, storage)
+		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
+		initInMemoryData(ctxRoot, log, *cfg, storage)
 
-	// 	var errAuth error
-	// 	urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-	// 	authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
-	// 	if errAuth != nil {
-	// 		log.Error().Err(errAuth).Msg("Failed to initialize authentication with in-memory storage")
-	// 		urlService = nil
-	// 		authService = nil
-	// 	}
-	// }
+		var errAuth error
+		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
+		authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+		if errAuth != nil {
+			log.Error().Err(errAuth).Msg("Failed to initialize authentication with in-memory storage")
+			urlService = nil
+			authService = nil
+		}
+	}
 
 	if urlService == nil || authService == nil {
 		log.

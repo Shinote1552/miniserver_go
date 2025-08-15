@@ -66,7 +66,7 @@ func (a *Authentication) ValidateAndGetUser(ctx context.Context, jwtToken string
 
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID int64
+	UserID int64 `json:"UserID"`
 }
 
 func (a *Authentication) jwtGenerate(userID int64) (string, time.Time, error) {
@@ -99,13 +99,13 @@ func (a *Authentication) getUserId(tokenString string) (int64, error) {
 			return []byte(a.secretKey), nil
 		})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to parse token: %w", err)
 	}
 
 	if !token.Valid {
-		return 0, fmt.Errorf("Token is not valid")
+		return 0, fmt.Errorf("token is invalid")
 	}
 
-	fmt.Println("Token os valid")
+	fmt.Printf("Decoded claims: %+v\n", claims) // <- добавить для отладки
 	return claims.UserID, nil
 }

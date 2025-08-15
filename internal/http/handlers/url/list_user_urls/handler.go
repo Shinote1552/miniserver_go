@@ -3,6 +3,7 @@ package list_user_urls
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"urlshortener/domain/models"
 	"urlshortener/internal/http/dto"
@@ -19,7 +20,7 @@ func HandlerGetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 
 		userID, ok := ctx.Value("user_id").(int64)
 		if !ok || userID == 0 {
-			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required")
+			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required, userID :"+fmt.Sprintf("%d", userID))
 			return
 		}
 
@@ -30,7 +31,7 @@ func HandlerGetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.Handle
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to get user URLs")
+			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to get user URLs, userID: "+fmt.Sprintf("%d", userID))
 			return
 		}
 

@@ -31,7 +31,7 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	if url.ShortCode == "" || url.OriginalURL == "" {
+	if url.ShortCode == "" || url.OriginalURL == "" || url.UserID <= 0 {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
@@ -108,6 +108,10 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		// Check for conflicts first
 		conflict := false
 		var existingDB dto.ShortenedLinkDB
+
+		if url.UserID <= 0 {
+			return nil, models.ErrInvalidData
+		}
 
 		for _, existing := range m.data {
 			if existing.OriginalURL == url.OriginalURL {
@@ -315,4 +319,36 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 	}
 
 	return models.ShortenedLink{}, nil
+}
+
+func (m *InmemoryStorage) GetAllWithUsers(ctx context.Context) ([]dto.FullURLInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, models.ErrInvalidData
+	}
+
+	result := make([]dto.FullURLInfo, 0, len(m.data))
+
+	for _, url := range m.data {
+		info := dto.FullURLInfo{
+			URLID:        url.ID,
+			ShortKey:     url.ShortCode,
+			OriginalURL:  url.OriginalURL,
+			URLCreatedAt: url.CreatedAt,
+			UserID:       url.UserID,
+		}
+
+		// If the URL has an associated user, add their creation time
+		if user, exists := m.users[url.UserID]; exists {
+			info.UserCreatedAt = user.CreatedAt
+		}
+
+		result = append(result, info)
+	}
+
+	// Sort by URL creation date (newest first)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].URLCreatedAt.After(result[j].URLCreatedAt)
+	})
+
+	return result, nil
 }

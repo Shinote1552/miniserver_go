@@ -5,13 +5,13 @@ import (
 	"net/http"
 
 	"urlshortener/internal/http/httputils"
-	"urlshortener/internal/repository/postgres"
+	"urlshortener/internal/repository/dto"
 
 	"github.com/rs/zerolog"
 )
 
 type Service interface {
-	GetAllWithUsers(ctx context.Context) ([]postgres.FullURLInfo, error)
+	GetAllWithUsers(ctx context.Context) ([]dto.FullURLInfo, error)
 }
 
 func HandlerGetAll(svc Service, log zerolog.Logger) http.HandlerFunc {

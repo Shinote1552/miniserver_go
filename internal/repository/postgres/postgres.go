@@ -103,15 +103,20 @@ func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (mod
 }
 
 func (p *PostgresStorage) UserGetByID(ctx context.Context, id int64) (models.User, error) {
+	if err := ctx.Err(); err != nil {
+		return models.User{}, models.ErrInvalidData
+	}
+
 	if id <= 0 {
 		return models.User{}, models.ErrInvalidData
 	}
+
 	var userDB dto.UserDB
 
 	err := p.db.QueryRowContext(ctx,
 		`SELECT id, created_at
 		FROM users
-		WHERE id = $1`, id).Scan(&userDB)
+		WHERE id = $1`, id).Scan(&userDB.ID, &userDB.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -207,9 +212,9 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 
 	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls WHERE short_key = $1",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
 		shortKey,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -228,9 +233,9 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 
 	var result dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -247,7 +252,12 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
 
 	stmt, err := tx.PrepareContext(ctx, `
         INSERT INTO urls (short_key, original_url, user_id, created_at)
@@ -318,7 +328,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	}
 
 	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls LIMIT $1 OFFSET $2",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
 	if err != nil {
@@ -345,9 +355,9 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	var dbURL dto.ShortenedLinkDB
 	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = $1",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.CreatedAt)
+	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -365,7 +375,7 @@ func (p *PostgresStorage) ShortenedLinkBatchExists(ctx context.Context, original
 	}
 
 	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls WHERE original_url = ANY($1)",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = ANY($1)",
 		originalURLs,
 	)
 	if err != nil {
@@ -402,16 +412,7 @@ func (p *PostgresStorage) Close() error {
 
 */
 
-type FullURLInfo struct {
-	URLID         int64     `json:"url_id"`
-	ShortKey      string    `json:"short_key"`
-	OriginalURL   string    `json:"original_url"`
-	URLCreatedAt  time.Time `json:"url_created_at"`
-	UserID        int64     `json:"user_id"`
-	UserCreatedAt time.Time `json:"user_created_at"`
-}
-
-func (p *PostgresStorage) GetAllWithUsers(ctx context.Context) ([]FullURLInfo, error) {
+func (p *PostgresStorage) GetAllWithUsers(ctx context.Context) ([]dto.FullURLInfo, error) {
 	query := `
         SELECT 
             u.id AS url_id,
@@ -431,9 +432,9 @@ func (p *PostgresStorage) GetAllWithUsers(ctx context.Context) ([]FullURLInfo, e
 	}
 	defer rows.Close()
 
-	var results []FullURLInfo
+	var results []dto.FullURLInfo
 	for rows.Next() {
-		var info FullURLInfo
+		var info dto.FullURLInfo
 		err := rows.Scan(
 			&info.URLID,
 			&info.ShortKey,
