@@ -93,7 +93,7 @@ func (s *Server) setupRoutes() {
 	// Protected routes (with auth)
 	authRouter.HandleFunc("/api/shorten/batch", create_json_batch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
 	authRouter.HandleFunc("/api/shorten", create_json.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                  // 201
-	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress, *s.log)).Methods("GET")
+	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
 	authRouter.HandleFunc("/", create_text.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
 }
 
