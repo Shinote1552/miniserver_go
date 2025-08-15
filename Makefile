@@ -47,6 +47,7 @@ up: db-new run
 clean: db-down
 	@echo "Removing container..."
 	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
+	@rm -rf tmp
 	@echo "Cleanup complete"
 
 lines:
@@ -61,3 +62,15 @@ lines:
 # make run     # Start server only
 # make up      # Full startup (DB + server)
 # make clean   # Stop and remove container
+
+
+
+
+# FAST TEST
+# # Сохраняем куку при первом запросе
+# curl -v -c cookies.txt -X POST http://localhost:8080/api/shorten -d '{"url":"https://example.com"}'
+
+# # Используем для всех последующих запросов
+# curl -v -b cookies.txt -X POST http://localhost:8080/api/shorten -d '{"url":"https://another.com"}'
+# curl -v -b cookies.txt -X POST http://localhost:8080/api/shorten/batch -d '[{"url":"https://google.com"}]'
+# curl -v -b cookies.txt -X GET http://localhost:8080/api/user/urls

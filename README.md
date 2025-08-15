@@ -1,4 +1,4 @@
-# System configurating
+# General System configurating
 ## Структура проекта
 - **Domain Models**: `domain/models/` - бизнес-сущности
 - **Services**: `domain/services/` - бизнес-логика (use cases)
@@ -68,8 +68,6 @@ go run urlshortener/cmd/server \
 
 ```
 
-# Environment Variables Configuration
-
 # Полный набор переменных окружения
 
 | Переменная              | Описание                          | Пример значения                          |
@@ -90,4 +88,70 @@ FILE_STORAGE_PATH=/data/urls.json
 DATABASE_DSN=postgres://app_user:password@db-server:5432/shortener_prod
 JWT_SECRET_KEY=uV8q7z$A%D*G-KaPdSgVkYp3s6v9y/BE
 JWT_ACCESS_EXPIRE=30m
+```
+
+## Основные возможности
+
+### Особенности
+Автоматическая JWT-аутентификация через куки
+Поддержка PostgreSQL и файлового хранилища Inmmeory
+Проверка дубликатов URL, shortCode (409 Conflict)
+Сжатие ответов (gzip) по хэдеру "Accept-Encoding:gzip" и логирование запросов
+
+## Публичные обработчики
+
+### `GET /ping`
+- Проверяет соединение с базой данных
+- Возвращает 200 OK если БД доступна, 500 если нет
+- Используется для мониторинга работоспособности
+
+### `GET /{id}`
+- Перенаправляет на оригинальный URL по короткому идентификатору
+- Возвращает HTTP 307 (Temporary Redirect)
+- Если URL не найден - возвращает 400 Bad Request
+
+### `GET /`
+- Дефолтный обработчик для корневого пути
+- Всегда возвращает 400 Bad Request
+- Используется для обработки некорректных запросов
+
+## Защищенные обработчики (требуют JWT, если нету выдает)
+
+### `POST /api/shorten`
+- Создает короткую версию URL из JSON-запроса
+- Возвращает 201 Created с коротким URL
+- При дубликате URL возвращает 409 Conflict
+- Валидирует входные данные
+
+### `POST /api/shorten/batch` 
+- Пакетное создание коротких URL
+- Принимает массив URL с correlation_id
+- Возвращает массив результатов с сохранением correlation_id
+- Обрабатывает до 10 URL за один запрос
+
+### `POST /`
+- Альтернативная версия сокращения URL
+- Принимает URL в теле запроса (text/plain)
+- Возвращает короткий URL как текст
+- Аналогичная логика обработки дубликатов
+
+### `GET /api/user/urls`
+- Возвращает все URL текущего пользователя
+- Формат: массив объектов {short_url, original_url}
+- Пустой результат - 204 No Content
+- Требует валидной JWT куки
+### Примеры использования
+
+```bash
+# Проверка сервиса
+curl http://localhost:8080/ping
+
+# Сокращение URL, в ответ возвращается JWT токен, нужно в каждый POST запрос прикладывать свой JWT токен для идентификации, иначе при `GET /api/user/urls` мы не сможем получить все данные
+curl -X POST http://localhost:8080/api/shorten \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
+
+# Получение своих URL по токену который выдан уникальному пользователю
+curl http://localhost:8080/api/user/urls \
+  -H "Cookie: auth_token=your_token"
 ```
