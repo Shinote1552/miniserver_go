@@ -7,7 +7,6 @@ import (
 	"time"
 	"urlshortener/domain/services"
 	"urlshortener/internal/config"
-	"urlshortener/internal/http/handlers/admin"
 	"urlshortener/internal/http/handlers/middlewares/auth"
 	"urlshortener/internal/http/handlers/middlewares/compressor"
 	"urlshortener/internal/http/handlers/middlewares/logger"
@@ -75,12 +74,6 @@ func (s *Server) setupRoutes() {
 
 	s.router.Use(logger.MiddlewareLogging(s.log))
 	s.router.Use(compressor.MiddlewareCompressing())
-
-	/*
-		DEBUG
-	*/
-
-	s.router.HandleFunc("/admin/urls", admin.HandlerGetAll(s.urlService, *s.log)).Methods("GET")
 
 	// Public routes (no auth required)
 	s.router.HandleFunc("/ping", ping.HandlerPing(s.urlService)).Methods("GET")
