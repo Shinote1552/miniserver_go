@@ -2,12 +2,11 @@ package find_by_id
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"urlshortener/domain/models"
 	"urlshortener/internal/http/httputils"
-
-	"github.com/gorilla/mux"
 )
 
 type ServiceURLShortener interface {
@@ -17,24 +16,13 @@ type ServiceURLShortener interface {
 func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		vars := mux.Vars(r)
-		shortKey := vars["id"]
+		id := strings.TrimPrefix(r.URL.Path, "/")
 
-		url, err := svc.GetURL(ctx, shortKey)
+		url, err := svc.GetURL(ctx, id)
 		if err != nil {
-			if errors.Is(err, models.ErrUnfound) {
-				httputils.WriteJSONError(w, http.StatusNotFound, "URL не найден")
-				return
-			}
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "ошибка получения URL")
+			httputils.WriteTextError(w, http.StatusBadRequest, fmt.Sprintf("GetURL Error(): %v", err))
 			return
 		}
-
-		if url.IsDeleted {
-			w.WriteHeader(http.StatusGone) // 410 для удаленных URL
-			return
-		}
-
-		http.Redirect(w, r, url.OriginalURL, http.StatusTemporaryRedirect)
+		httputils.WriteRedirect(w, url.OriginalURL, false)
 	}
 }

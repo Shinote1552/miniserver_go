@@ -14,7 +14,6 @@ import (
 	"urlshortener/internal/http/handlers/url/create_json"
 	"urlshortener/internal/http/handlers/url/create_json_batch"
 	"urlshortener/internal/http/handlers/url/create_text"
-	"urlshortener/internal/http/handlers/url/delete_batch"
 	"urlshortener/internal/http/handlers/url/find_by_id"
 	"urlshortener/internal/http/handlers/url/get_default"
 	"urlshortener/internal/http/handlers/url/list_user_urls"
@@ -92,7 +91,6 @@ func (s *Server) setupRoutes() {
 	authRouter.HandleFunc("/api/shorten", create_json.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                  // 201
 	authRouter.HandleFunc("/", create_text.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                             // 201
 	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
-	authRouter.HandleFunc("/api/user/urls", delete_batch.HandlerDeleteURLBatch(s.urlService)).Methods("DELETE")
 }
 
 func (s *Server) Start(ctx context.Context) error {
