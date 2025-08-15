@@ -61,23 +61,23 @@ func initConnectionPools(db *sql.DB) {
 
 func createTable(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
-	CREATE TABLE IF NOT EXISTS users(
-		id BIGSERIAL PRIMARY KEY,
-		created_at TIMESTAMP NOT NULL
-	)`)
+    CREATE TABLE IF NOT EXISTS users(
+        id BIGSERIAL PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL
+    )`)
 	if err != nil {
 		return fmt.Errorf("failed to create users table: %w", err)
 	}
 
 	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS urls (
-			id BIGSERIAL PRIMARY KEY,
-			short_key VARCHAR(10) UNIQUE NOT NULL,
-			original_url TEXT NOT NULL,
-			created_at TIMESTAMP NOT NULL,
-			UNIQUE (original_url)
-		)`)
-
+        CREATE TABLE IF NOT EXISTS urls (
+            id BIGSERIAL PRIMARY KEY,
+            short_key VARCHAR(10) UNIQUE NOT NULL,
+            original_url TEXT NOT NULL,
+            user_id BIGINT REFERENCES users(id),
+            created_at TIMESTAMP NOT NULL,
+            UNIQUE (original_url)
+        )`)
 	if err != nil {
 		return fmt.Errorf("failed to create urls table: %w", err)
 	}
@@ -183,7 +183,7 @@ func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (original_url) DO NOTHING
         RETURNING id, short_key, original_url, user_id, created_at`,
-		dbURL.ShortCode, dbURL.OriginalURL, dbURL.CreatedAt,
+		dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
 	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
 
 	if err != nil {
@@ -250,10 +250,10 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO urls (short_key, original_url, created_at)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (original_url) DO NOTHING
-		RETURNING id, short_key, original_url, created_at`)
+        INSERT INTO urls (short_key, original_url, user_id, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (original_url) DO NOTHING
+        RETURNING id, short_key, original_url, user_id, created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -262,8 +262,8 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	var result []models.ShortenedLink
 	for _, url := range urls {
 		var dbURL dto.ShortenedLinkDB
-		err := stmt.QueryRowContext(ctx, url.ShortCode, url.OriginalURL, url.CreatedAt).Scan(
-			&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.CreatedAt,
+		err := stmt.QueryRowContext(ctx, url.ShortCode, url.OriginalURL, url.UserID, url.CreatedAt).Scan(
+			&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt,
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

@@ -1,4 +1,3 @@
-// Файл: internal/http/dto/shortened_link.go
 package dto
 
 import (
