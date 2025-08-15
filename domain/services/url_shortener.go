@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"time"
 	"urlshortener/domain/models"
+	"urlshortener/internal/repository/postgres"
 )
 
 // URLStorage - основной интерфейс хранилища URL и shotURL
@@ -19,12 +20,26 @@ type URLStorage interface {
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 	Ping(ctx context.Context) error
+
+	/*
+		DEBUG
+	*/
+	GetAllWithUsers(ctx context.Context) ([]postgres.FullURLInfo, error)
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
 type URLShortener struct {
 	storage URLStorage
 	baseURL string
+}
+
+func (s *URLShortener) GetAllWithUsers(ctx context.Context) ([]postgres.FullURLInfo, error) {
+	users, err := s.storage.GetAllWithUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to GetAllWithUsers: %w", err)
+	}
+
+	return users, nil
 }
 
 func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {

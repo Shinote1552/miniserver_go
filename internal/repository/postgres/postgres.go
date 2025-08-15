@@ -396,26 +396,61 @@ func (p *PostgresStorage) Close() error {
 	return p.db.Close()
 }
 
-func (p *PostgresStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
-	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_key, original_url, created_at FROM urls")
+/*
+
+	DEBUG
+
+*/
+
+type FullURLInfo struct {
+	URLID         int64     `json:"url_id"`
+	ShortKey      string    `json:"short_key"`
+	OriginalURL   string    `json:"original_url"`
+	URLCreatedAt  time.Time `json:"url_created_at"`
+	UserID        int64     `json:"user_id"`
+	UserCreatedAt time.Time `json:"user_created_at"`
+}
+
+func (p *PostgresStorage) GetAllWithUsers(ctx context.Context) ([]FullURLInfo, error) {
+	query := `
+        SELECT 
+            u.id AS url_id,
+            u.short_key,
+            u.original_url,
+            u.created_at AS url_created_at,
+            u.user_id,
+            usr.created_at AS user_created_at
+        FROM urls u
+        LEFT JOIN users usr ON u.user_id = usr.id
+        ORDER BY u.created_at DESC
+    `
+
+	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query URLs: %w", err)
+		return nil, fmt.Errorf("failed to query URLs with users: %w", err)
 	}
 	defer rows.Close()
 
-	var urls []models.ShortenedLink
+	var results []FullURLInfo
 	for rows.Next() {
-		var dbURL dto.ShortenedLinkDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan URL: %w", err)
+		var info FullURLInfo
+		err := rows.Scan(
+			&info.URLID,
+			&info.ShortKey,
+			&info.OriginalURL,
+			&info.URLCreatedAt,
+			&info.UserID,
+			&info.UserCreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan URL with user info: %w", err)
 		}
-		urls = append(urls, dto.ShortenedLinkDBToDomain(dbURL))
+		results = append(results, info)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 
-	return urls, nil
+	return results, nil
 }

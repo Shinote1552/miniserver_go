@@ -7,6 +7,7 @@ import (
 	"time"
 	"urlshortener/domain/services"
 	"urlshortener/internal/config"
+	"urlshortener/internal/http/handlers/admin"
 	"urlshortener/internal/http/handlers/middlewares/auth"
 	"urlshortener/internal/http/handlers/middlewares/compressor"
 	"urlshortener/internal/http/handlers/middlewares/logger"
@@ -75,19 +76,25 @@ func (s *Server) setupRoutes() {
 	s.router.Use(logger.MiddlewareLogging(s.log))
 	s.router.Use(compressor.MiddlewareCompressing())
 
+	/*
+		DEBUG
+	*/
+
+	s.router.HandleFunc("/admin/urls", admin.HandlerGetAll(s.urlService, *s.log)).Methods("GET")
+
 	// Public routes (no auth required)
 	s.router.HandleFunc("/ping", ping.HandlerPing(s.urlService)).Methods("GET")
 	s.router.HandleFunc("/{id}", find_by_id.HandlerGetURLWithID(s.urlService)).Methods("GET") // 307
 	s.router.HandleFunc("/", get_default.HandlerGetDefault()).Methods("GET")                  // 400
 
-	// Protected routes (auth required)
 	authRouter := s.router.PathPrefix("/").Subrouter()
 	authRouter.Use(auth.MiddlewareAuth(s.authService))
 
+	// Protected routes (with auth)
 	authRouter.HandleFunc("/api/shorten/batch", create_json_batch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
 	authRouter.HandleFunc("/api/shorten", create_json.HandlerSetURLJson(s.urlService, s.cfg.ServerAddress)).Methods("POST")                  // 201
-	authRouter.HandleFunc("/", create_text.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST")                             // 201
-	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("GET")
+	authRouter.HandleFunc("/api/user/urls", list_user_urls.HandlerGetURLJsonBatch(s.urlService, s.cfg.ServerAddress, *s.log)).Methods("GET")
+	authRouter.HandleFunc("/", create_text.HandlerSetURLText(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201
 }
 
 func (s *Server) Start(ctx context.Context) error {
