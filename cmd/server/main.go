@@ -80,7 +80,12 @@ func main() {
 		return
 	}
 
-	srv, err := server.NewServer(log, *cfg, urlService, authService)
+	srv, err := server.
+		NewServer(log,
+			*cfg,
+			urlService,
+			authService,
+		)
 	if err != nil {
 		log.
 			Fatal().
@@ -92,6 +97,19 @@ func main() {
 
 }
 
+/*
+Пример:
+
+	func run(
+
+		ctx    context.Context,
+		args   []string,
+		getenv func(string) string,
+		stdin  io.Reader,
+		stdout, stderr io.Writer,
+
+	) error
+*/
 func runServer(srv *server.Server, log *zerolog.Logger) {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
