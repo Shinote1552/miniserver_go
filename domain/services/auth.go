@@ -10,7 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-//go:generate mockgen -source=auth.go -destination=../../mocks/mock_url_storage.go -package=mocks
+//go:generate mockgen -source=auth.go -destination=../../mocks/mock_auth.go -package=mocks
 type UserStorage interface {
 	UserCreate(ctx context.Context, user models.User) (models.User, error)
 	UserGetByID(ctx context.Context, id int64) (models.User, error)
