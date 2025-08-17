@@ -11,6 +11,8 @@ import (
 )
 
 // URLStorage - основной интерфейс хранилища URL и shotURL
+//
+//go:generate mockgen -source=url_shortener.go -destination=../../mocks/mock_url_storage.go -package=mocks
 type URLStorage interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
 	ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error)
@@ -30,12 +32,13 @@ type URLShortener struct {
 func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
 
 	if userID <= 0 {
-		return nil, fmt.Errorf("failed to validate userID: " + string(userID))
+
+		return nil, fmt.Errorf("failed to validate userID: %d", userID)
 	}
 
 	userLinks, err := s.storage.ShortenedLinkGetBatchByUser(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get links: %w, userID: "+string(userID), err)
+		return nil, fmt.Errorf("failed to get links: %w, userID: %d", err, userID)
 	}
 
 	return userLinks, nil

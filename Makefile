@@ -8,6 +8,14 @@ POSTGRES_USER := postgres
 POSTGRES_PASSWORD := admin
 POSTGRES_PORT := 5432
 
+
+# go generate (если настроены //go:generate комментарии)
+mockgen:
+	@echo "Generating using go generate..."
+	@go generate ./...
+	@echo "Generation complete"
+
+
 # Start existing container
 db-up:
 	@echo "Starting existing PostgreSQL container..."

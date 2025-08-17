@@ -9,7 +9,6 @@ import (
 	"urlshortener/internal/http/httputils"
 )
 
-//go:generate mockgen
 type Authentication interface {
 	Register(ctx context.Context, user models.User) (models.User, string, time.Time, error)
 	ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
