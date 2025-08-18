@@ -165,6 +165,7 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 	}{
 		{
 			name: "Успешная валидация токена",
+
 			setup: func(m *mocks.MockUserStorage) string {
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
@@ -182,6 +183,7 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 		},
 		{
 			name: "Пользователь не найден",
+
 			setup: func(m *mocks.MockUserStorage) string {
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
@@ -200,6 +202,7 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 		},
 		{
 			name: "Невалидный токен",
+
 			setup: func(m *mocks.MockUserStorage) string {
 				return "invalid.token.here"
 			},
@@ -208,6 +211,7 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 		},
 		{
 			name: "Просроченный токен",
+
 			setup: func(m *mocks.MockUserStorage) string {
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
@@ -240,6 +244,7 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
+
 				if tt.expectedErr != nil {
 					assert.Contains(t, err.Error(), tt.expectedErr.Error())
 				}
