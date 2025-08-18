@@ -22,6 +22,7 @@ ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
 
 Эти два метода тесно связаны, чтобы работало одно нужно другое тоже.
 Надо ли в таких случаях Обьединить тесты этих двух методов в один?
+Пока что написал с разделением.
 */
 
 func TestAuth_Register(t *testing.T) {
