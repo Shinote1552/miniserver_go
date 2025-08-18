@@ -51,6 +51,12 @@ run:
 # Combined command: DB + server
 up: db-new run
 
+cover: 
+	@go test -cover ./...
+
+test:
+	@go test ./...
+
 # Cleanup
 clean: db-down
 	@echo "Removing container..."
