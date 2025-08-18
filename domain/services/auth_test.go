@@ -40,6 +40,9 @@ func TestAuth_Register(t *testing.T) {
 							CreatedAt: u.CreatedAt,
 						}, nil
 					})
+				m.EXPECT().
+					UserGetByID(gomock.Any(), int64(1)).
+					Return(models.User{ID: 1}, nil)
 			},
 			wantUserID: 1,
 			wantToken:  true,
@@ -92,6 +95,9 @@ func TestAuth_Register(t *testing.T) {
 							CreatedAt: u.CreatedAt,
 						}, nil
 					})
+				m.EXPECT().
+					UserGetByID(gomock.Any(), int64(2)).
+					Return(models.User{ID: 2}, nil)
 			},
 			wantUserID: 2,
 			wantToken:  true,
@@ -125,7 +131,13 @@ func TestAuth_Register(t *testing.T) {
 
 			if tt.wantToken {
 				assert.NotEmpty(t, gotToken)
+
+				validatedUser, err := auth.ValidateAndGetUser(context.Background(), gotToken)
+				require.NoError(t, err, "Токен должен быть валидным")
+				assert.Equal(t, tt.wantUserID, validatedUser.ID, "Токен должен содержать правильный userID")
 			}
 		})
 	}
 }
+
+func TestAuth_ValidateAndGetUser(t *testing.T) {}
