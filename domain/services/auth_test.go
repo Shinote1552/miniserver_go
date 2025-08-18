@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 	"urlshortener/domain/models"
@@ -12,6 +13,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+/*
+DECRYPTION
+
+Register(ctx context.Context, user models.User) (models.User, string, time.Time, error)
+ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
+
+Эти два метода тесно связаны, чтобы работало одно нужно другое тоже.
+Надо ли в таких случаях Обьединить тесты этих двух методов в один?
+*/
 
 func TestAuth_Register(t *testing.T) {
 	secretKey := base64.StdEncoding.EncodeToString([]byte("test-secret-key-32-bytes-long!!!"))
@@ -140,4 +151,102 @@ func TestAuth_Register(t *testing.T) {
 	}
 }
 
-func TestAuth_ValidateAndGetUser(t *testing.T) {}
+func TestAuth_ValidateAndGetUser(t *testing.T) {
+	secretKey := base64.StdEncoding.EncodeToString([]byte("test-secret-key-32-bytes-long!!!"))
+	accessExp := 15 * time.Minute
+
+	tests := []struct {
+		name        string
+		setup       func(*mocks.MockUserStorage) string
+		wantUserID  int64
+		wantErr     bool
+		expectedErr error
+	}{
+		{
+			name: "Успешная валидация токена",
+			setup: func(m *mocks.MockUserStorage) string {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					Return(models.User{ID: 1}, nil)
+				m.EXPECT().
+					UserGetByID(gomock.Any(), int64(1)).
+					Return(models.User{ID: 1}, nil)
+
+				auth, _ := NewAuthentication(m, secretKey, accessExp)
+				_, token, _, err := auth.Register(context.Background(), models.User{})
+				require.NoError(t, err)
+				return token
+			},
+			wantUserID: 1,
+		},
+		{
+			name: "Пользователь не найден",
+			setup: func(m *mocks.MockUserStorage) string {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					Return(models.User{ID: 1}, nil)
+				m.EXPECT().
+					UserGetByID(gomock.Any(), int64(1)).
+					Return(models.User{}, models.ErrUnfound)
+
+				auth, _ := NewAuthentication(m, secretKey, accessExp)
+				_, token, _, err := auth.Register(context.Background(), models.User{})
+				require.NoError(t, err)
+				return token
+			},
+			wantErr:     true,
+			expectedErr: models.ErrUnfound,
+		},
+		{
+			name: "Невалидный токен",
+			setup: func(m *mocks.MockUserStorage) string {
+				return "invalid.token.here"
+			},
+			wantErr:     true,
+			expectedErr: fmt.Errorf("failed to parse token"),
+		},
+		{
+			name: "Просроченный токен",
+			setup: func(m *mocks.MockUserStorage) string {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					Return(models.User{ID: 1}, nil)
+
+				// Создаем auth сервис с отрицательным временем жизни токена
+				expiredAuth, err := NewAuthentication(m, secretKey, -1*time.Hour)
+				require.NoError(t, err)
+
+				_, token, _, err := expiredAuth.Register(context.Background(), models.User{})
+				require.NoError(t, err)
+				return token
+			},
+			wantErr:     true,
+			expectedErr: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockStorage := mocks.NewMockUserStorage(ctrl)
+			auth, err := NewAuthentication(mockStorage, secretKey, accessExp)
+			require.NoError(t, err)
+
+			token := tt.setup(mockStorage)
+			gotUser, err := auth.ValidateAndGetUser(context.Background(), token)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.Contains(t, err.Error(), tt.expectedErr.Error())
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantUserID, gotUser.ID)
+		})
+	}
+}
