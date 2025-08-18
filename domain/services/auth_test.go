@@ -13,26 +13,89 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSomething(t *testing.T) {
-
-	// base64.StdEncoding.EncodeToString([]byte()
-	assert.True(t, true, "True is true!")
-}
-
 func TestAuth_Register(t *testing.T) {
 	secretKey := base64.StdEncoding.EncodeToString([]byte("test-secret-key-32-bytes-long!!!"))
 	accessExp := 15 * time.Minute
 
 	tests := []struct {
-		name      string
-		inputUser models.User
-		setupMock func(*mocks.MockUserStorage)
-		// wantUser    models.User
-		// expected    string
+		name        string
+		inputUser   models.User
+		mockSetup   func(*mocks.MockUserStorage, models.User)
+		wantUserID  int64
+		wantToken   bool
 		wantErr     bool
-		errContains string
+		expectedErr error
 	}{
-		{},
+		{
+			name:      "Успешная регистрация нового пользователя",
+			inputUser: models.User{},
+
+			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
+						assert.False(t, u.CreatedAt.IsZero(), "CreatedAt не должно быть нулевым")
+						return models.User{
+							ID:        1,
+							CreatedAt: u.CreatedAt,
+						}, nil
+					})
+			},
+			wantUserID: 1,
+			wantToken:  true,
+		},
+		{
+			name:      "Конфликт при создании пользователя",
+			inputUser: models.User{},
+
+			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
+						assert.False(t, u.CreatedAt.IsZero(), "CreatedAt не должно быть нулевым")
+						return models.User{}, models.ErrConflict
+					})
+			},
+			wantErr:     true,
+			expectedErr: models.ErrConflict,
+		},
+		{
+			name:      "Ошибка пустого хранилища",
+			inputUser: models.User{},
+
+			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
+						assert.False(t, u.CreatedAt.IsZero(), "CreatedAt не должно быть нулевым")
+						return models.User{}, models.ErrEmpty
+					})
+			},
+			wantErr:     true,
+			expectedErr: models.ErrEmpty,
+		},
+		{
+			name: "Пользователь с предустановленным CreatedAt",
+			inputUser: models.User{
+				CreatedAt: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+
+			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					UserCreate(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
+						assert.False(t, u.CreatedAt.IsZero(), "CreatedAt не должно быть нулевым")
+						assert.True(t, u.CreatedAt.After(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)), "CreatedAt слишком старое")
+						assert.True(t, u.CreatedAt.Before(time.Now().Add(time.Minute)), "CreatedAt в будущем")
+						return models.User{
+							ID:        2,
+							CreatedAt: u.CreatedAt,
+						}, nil
+					})
+			},
+			wantUserID: 2,
+			wantToken:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -40,23 +103,29 @@ func TestAuth_Register(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			mock := mocks.NewMockUserStorage(ctrl)
-			authService, err := NewAuthentication(mock, secretKey, accessExp)
+			mockStorage := mocks.NewMockUserStorage(ctrl)
+			auth, err := NewAuthentication(mockStorage, secretKey, accessExp)
 			require.NoError(t, err)
-			tt.setupMock(mock)
 
-			gotUser, gotToken, _, err := authService.Register(context.Background(), tt.inputUser)
+			tt.mockSetup(mockStorage, tt.inputUser)
+
+			gotUser, gotToken, _, err := auth.Register(context.Background(), tt.inputUser)
 
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errContains)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
+				}
 				return
 			}
+
 			require.NoError(t, err)
-			assert.NotZero(t, gotUser.ID)
-			assert.IsType(t, int64(0), gotUser.ID) // типа защита от дурака хз может надо будет убрать
-			assert.NotEmpty(t, gotToken)
+			assert.Equal(t, tt.wantUserID, gotUser.ID)
+			assert.False(t, gotUser.CreatedAt.IsZero())
+
+			if tt.wantToken {
+				assert.NotEmpty(t, gotToken)
+			}
 		})
 	}
-
 }
