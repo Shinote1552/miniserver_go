@@ -10,8 +10,9 @@ import (
 	"urlshortener/domain/models"
 )
 
-// URLStorage - основной интерфейс хранилища URL и shotURL
-//
+/*
+URLStorage - основной интерфейс хранилища URL и shotURL
+*/
 //go:generate mockgen -source=url_shortener.go -destination=../../mocks/mock_url_storage.go -package=mocks
 type URLStorage interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
