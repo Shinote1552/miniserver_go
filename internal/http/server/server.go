@@ -5,9 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"time"
-	"urlshortener/domain/services"
+	"urlshortener/domain/services/auth"
+	"urlshortener/domain/services/url_shortener"
 	"urlshortener/internal/config"
-	"urlshortener/internal/http/handlers/middlewares/auth"
+	"urlshortener/internal/http/handlers/middlewares/authorization"
 	"urlshortener/internal/http/handlers/middlewares/compressor"
 	"urlshortener/internal/http/handlers/middlewares/logger"
 	"urlshortener/internal/http/handlers/system/ping"
@@ -26,12 +27,12 @@ type Server struct {
 	httpServer  *http.Server
 	router      *mux.Router
 	log         *zerolog.Logger
-	authService *services.Authentication
-	urlService  *services.URLShortener
+	authService *auth.Authentication
+	urlService  *url_shortener.URLShortener
 	cfg         config.Config
 }
 
-func NewServer(log *zerolog.Logger, cfg config.Config, svc *services.URLShortener, auth *services.Authentication) (*Server, error) {
+func NewServer(log *zerolog.Logger, cfg config.Config, svc *url_shortener.URLShortener, auth *auth.Authentication) (*Server, error) {
 
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и
@@ -81,7 +82,7 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/", get_default.HandlerGetDefault()).Methods("GET")                  // 400
 
 	authRouter := s.router.PathPrefix("/").Subrouter()
-	authRouter.Use(auth.MiddlewareAuth(s.authService))
+	authRouter.Use(authorization.MiddlewareAuth(s.authService))
 
 	// Protected routes (with auth)
 	authRouter.HandleFunc("/api/shorten/batch", create_json_batch.HandlerSetURLJsonBatch(s.urlService, s.cfg.ServerAddress)).Methods("POST") // 201

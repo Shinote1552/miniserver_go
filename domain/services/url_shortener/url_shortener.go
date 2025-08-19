@@ -1,4 +1,4 @@
-package services
+package url_shortener
 
 import (
 	"context"

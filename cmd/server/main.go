@@ -7,7 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"urlshortener/domain/services"
+
+	"urlshortener/domain/services/auth"
+	"urlshortener/domain/services/url_shortener"
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/server"
 	"urlshortener/internal/logger"
@@ -22,8 +24,8 @@ func main() {
 	ctxRoot := context.Background()
 	cfg := config.NewConfig()
 	log := logger.NewLogger()
-	var urlService *services.URLShortener
-	var authService *services.Authentication
+	var urlService *url_shortener.URLShortener
+	var authService *auth.Authentication
 
 	if cfg.DatabaseDSN != "" {
 		storage, err := initPostgres(ctxRoot, log, cfg.DatabaseDSN)
@@ -40,8 +42,8 @@ func main() {
 			initPostgresData(ctxRoot, log, *cfg, storage)
 
 			var errAuth error
-			urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-			authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+			urlService = url_shortener.NewServiceURLShortener(storage, cfg.BaseURL)
+			authService, errAuth = auth.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
 			if errAuth != nil {
 				log.
 					Error().
@@ -64,8 +66,8 @@ func main() {
 		initInMemoryData(ctxRoot, log, *cfg, storage)
 
 		var errAuth error
-		urlService = services.NewServiceURLShortener(storage, cfg.BaseURL)
-		authService, errAuth = services.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
+		urlService = url_shortener.NewServiceURLShortener(storage, cfg.BaseURL)
+		authService, errAuth = auth.NewAuthentication(storage, cfg.JWTSecretKey, cfg.JWTAccessExpire)
 		if errAuth != nil {
 			log.Error().Err(errAuth).Msg("Failed to initialize authentication with in-memory storage")
 			urlService = nil
