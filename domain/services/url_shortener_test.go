@@ -148,7 +148,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 				// Генерация токена
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
-					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
+					Return(models.ShortenedLink{}, models.ErrUnfound)
 
 				// Создание записи
 				mockStorage.EXPECT().
@@ -240,6 +240,10 @@ func TestURLShortener_SetURL(t *testing.T) {
 	}
 }
 
+/*
+AnyTimes() пришлось добавлять потому что ShortenedLinkGetByShortKey много раз
+вызывается при каждой генерации shortCode/shortURL
+*/
 func TestURLShortener_BatchCreate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -267,7 +271,7 @@ func TestURLShortener_BatchCreate(t *testing.T) {
 					ShortenedLinkBatchExists(gomock.Any(), []string{"http://url1", "http://url2"}).
 					Return([]models.ShortenedLink{}, nil)
 
-				// Генерация токенов
+				// Проверка существующих shortCode после Генерации shortCode
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
@@ -302,7 +306,7 @@ func TestURLShortener_BatchCreate(t *testing.T) {
 						{OriginalURL: "http://existing", ShortCode: "exist123", UserID: 1},
 					}, nil)
 
-				// Для нового URL генерируем токен
+				// Проверка существующих shortCode после Генерации shortCode
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()

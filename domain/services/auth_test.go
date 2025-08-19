@@ -225,7 +225,8 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 				require.NoError(t, err)
 				return token
 			},
-			wantErr:     true,
+			wantErr: true,
+			// nil чтобы конкретный error не проверял, а лишь факт того что есть ошибка а какая неважно
 			expectedErr: nil,
 		},
 	}
