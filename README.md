@@ -1,5 +1,8 @@
 # General System configurating
 ## Структура проекта
+
+- **Dependencies/versions**: Все зависимости проекта и их версии указаны в файле `go.mod`
+###
 - **Domain Models**: `domain/models/` - бизнес-сущности
 - **Services**: `domain/services/` - бизнес-логика (use cases)
 - **Handlers**: `internal/http/handlers/` - HTTP контроллеры
