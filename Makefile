@@ -42,6 +42,12 @@ db-down:
 	@docker stop $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@echo "Container stopped"
 
+build_static:
+	go build -tags netgo -ldflags '-extldflags "-static"' cmd/server/main.go
+
+build:
+	go build -ldflags "-s -w" cmd/server/main.go
+
 # Start server
 run:
 	@echo "Starting server..."
@@ -50,6 +56,8 @@ run:
 
 # Combined command: DB + server
 up: db-new run
+
+
 
 cover: 
 	@go test -cover ./...
