@@ -40,6 +40,17 @@ type Config struct {
 	JWTAccessExpire time.Duration
 }
 
+/*
+TODO
+
+use:
+
+	envVars := os.Environ()
+	envMap := make(map[string]string)
+
+or:
+  - github.com/caarlos0/env
+*/
 func NewConfig() *Config {
 	cfg := &Config{}
 
