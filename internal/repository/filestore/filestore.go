@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"urlshortener/domain/models"
@@ -22,24 +21,20 @@ var (
 )
 
 var (
-	ErrInvalidDir    = errors.New("invalid directory path")
-	ErrEmptyFile     = errors.New("file is empty")
-	ErrAbsPath       = errors.New("failed to get absolute path")
-	ErrCreateDir     = errors.New("failed to create directory")
-	ErrCreateFile    = errors.New("failed to create file")
-	ErrOpenFile      = errors.New("failed to open file")
-	ErrReadURL       = errors.New("failed to read URL from file")
-	ErrSetURL        = errors.New("failed to set URL in storage")
-	ErrMkdirAll      = errors.New("failed to create directory structure")
-	ErrNewFileWriter = errors.New("failed to create file writer")
-	ErrGetAllURLs    = errors.New("failed to get all URLs")
-	ErrWriteURL      = errors.New("failed to write URL to file")
-	ErrMarshalURL    = errors.New("failed to marshal URL")
-	ErrWriteData     = errors.New("failed to write data")
-	ErrWriteNewLine  = errors.New("failed to write new line")
-	ErrFlushWriter   = errors.New("failed to flush writer")
-	ErrCloseFile     = errors.New("failed to close file")
-	ErrUnmarshalURL  = errors.New("failed to unmarshal URL")
+	ErrInvalidDir   = errors.New("invalid directory path")
+	ErrEmptyFile    = errors.New("file is empty")
+	ErrAbsPath      = errors.New("failed to get absolute path")
+	ErrCreateDir    = errors.New("failed to create directory")
+	ErrCreateFile   = errors.New("failed to create file")
+	ErrOpenFile     = errors.New("failed to open file")
+	ErrReadURL      = errors.New("failed to read URL from file")
+	ErrSetURL       = errors.New("failed to set URL in storage")
+	ErrMkdirAll     = errors.New("failed to create directory structure")
+	ErrGetAllURLs   = errors.New("failed to get all URLs")
+	ErrWriteURL     = errors.New("failed to write URL to file")
+	ErrMarshalURL   = errors.New("failed to marshal URL")
+	ErrWriteData    = errors.New("failed to write data")
+	ErrWriteNewLine = errors.New("failed to write new line")
 )
 
 // StorageInterface - ограниченный интерфейс для работы с filestore
@@ -58,32 +53,54 @@ func Load(ctx context.Context, log zerolog.Logger, filePath string, storage Stor
 	if filePath == "" {
 		msg := "No file path provided - using empty storage"
 		log.Info().Msg(msg)
-		return msg, true, nil
+		return msg, true, nil // Файла нет = считаем его пустым
 	}
 
-	absPath, err := getAbsolutePath(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", false, logAndWrapError(log, err, ErrAbsPath, "get absolute path")
 	}
 
-	if err := ensureFileExists(ctx, absPath, log); err != nil {
-		return "", false, err
+	// Проверяем существование файла
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		// Файл не существует - создаем директорию и пустой файл
+		dir := filepath.Dir(absPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return "", false, logAndWrapError(log, err, ErrCreateDir, "create directory")
+		}
+
+		file, err := os.Create(absPath)
+		if err != nil {
+			return "", false, logAndWrapError(log, err, ErrCreateFile, "create file")
+		}
+		file.Close()
+
+		msg := fmt.Sprintf("File %s created as empty", absPath)
+		log.Info().Msg(msg)
+		return msg, true, nil
 	}
 
-	if isEmpty, err := checkFileEmpty(absPath, log); err != nil {
-		return "", false, err
-	} else if isEmpty {
-		log.Info().Str("path", absPath).Msg("File is empty - starting with empty storage")
-		return absPath, true, nil
+	// Проверяем, пуст ли файл
+	isEmpty, err := isFileEmpty(absPath)
+	if err != nil {
+		return "", false, logAndWrapError(log, err, ErrOpenFile, "check file size")
 	}
 
+	if isEmpty {
+		msg := fmt.Sprintf("File %s is empty", absPath)
+		log.Info().Msg(msg)
+		return msg, true, nil
+	}
+
+	// Загружаем данные из файла
 	loadedCount, err := loadURLsFromFile(ctx, absPath, storage, log)
 	if err != nil {
 		return "", false, err
 	}
 
-	msg, err := generateLoadResultMessage(loadedCount, absPath, log)
-	return msg, false, err
+	msg := fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath)
+	log.Info().Int("count", loadedCount).Str("path", absPath).Msg(msg)
+	return msg, false, nil // Файл не был пустым
 }
 
 // Save saves URLs from storage to file
@@ -96,13 +113,13 @@ func Save(ctx context.Context, log *zerolog.Logger, filePath string, storage Sto
 		return "", logError(*log, ErrInvalidDir, "invalid directory path")
 	}
 
-	absPath, err := getAbsolutePath(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", logAndWrapError(*log, err, ErrInvalidDir, "get absolute path")
 	}
 
 	dir := filepath.Dir(absPath)
-	if err := createDirectoryStructure(ctx, dir, *log); err != nil {
+	if err := createDirectoryIfNotExists(ctx, dir, *log); err != nil {
 		return dir, err
 	}
 
@@ -110,12 +127,12 @@ func Save(ctx context.Context, log *zerolog.Logger, filePath string, storage Sto
 		return dir, err
 	}
 
-	log.Info().Str("dir", dir).Msg("Data successfully saved")
-	return dir, nil
+	msg := fmt.Sprintf("Data successfully saved to %s", absPath)
+	log.Info().Str("path", absPath).Msg(msg)
+	return msg, nil
 }
 
 // Helper functions for error handling
-
 func logError(log zerolog.Logger, err error, msg string) error {
 	log.Error().Err(err).Msg(msg)
 	return err
@@ -126,70 +143,63 @@ func logAndWrapError(log zerolog.Logger, err error, wrapErr error, context strin
 	return fmt.Errorf("%w: %v", wrapErr, err)
 }
 
-// Helper functions for Load
-func getAbsolutePath(path string) (string, error) {
-	return filepath.Abs(path)
+// Helper functions for file operations
+func isFileEmpty(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return info.Size() == 0, nil
 }
 
-func ensureFileExists(ctx context.Context, absPath string, log zerolog.Logger) error {
-	if _, err := os.Stat(absPath); !os.IsNotExist(err) {
-		return nil
-	}
-
+func createDirectoryIfNotExists(ctx context.Context, dir string, log zerolog.Logger) error {
 	if err := ctx.Err(); err != nil {
 		return logError(log, err, "context error")
 	}
 
-	dir := filepath.Dir(absPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return logAndWrapError(log, err, ErrCreateDir, "create directory")
+		return logAndWrapError(log, err, ErrMkdirAll, "create directory structure")
 	}
-
-	return createEmptyFile(absPath, log)
+	return nil
 }
 
-func createEmptyFile(absPath string, log zerolog.Logger) error {
-	file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY, 0644)
+// Core loading and saving functions
+func loadURLsFromFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (int, error) {
+	file, err := os.Open(filePath)
 	if err != nil {
-		return logAndWrapError(log, err, ErrCreateFile, "create file")
+		return 0, logAndWrapError(log, err, ErrOpenFile, "open file")
 	}
-	return file.Close()
-}
+	defer file.Close()
 
-func checkFileEmpty(absPath string, log zerolog.Logger) (bool, error) {
-	fileInfo, err := os.Stat(absPath)
-	if err != nil {
-		return false, logAndWrapError(log, err, ErrOpenFile, "get file info")
-	}
-	return fileInfo.Size() == 0, nil
-}
+	scanner := bufio.NewScanner(file)
+	loadedCount := 0
 
-func loadURLsFromFile(ctx context.Context, absPath string, storage StorageInterface, log zerolog.Logger) (int, error) {
-	reader, err := newFileReader(absPath)
-	if err != nil {
-		return 0, logAndWrapError(log, err, ErrOpenFile, "open file for reading")
-	}
-	defer reader.close()
-
-	var loadedCount int
-	for {
+	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return 0, logError(log, err, "context error")
 		}
 
-		url, err := reader.readURL()
-		if err != nil {
-			if err == io.EOF || errors.Is(err, ErrEmptyFile) {
-				break
-			}
-			return 0, logAndWrapError(log, err, ErrReadURL, "read URL from file")
+		data := scanner.Bytes()
+		if len(data) == 0 {
+			continue
 		}
 
-		if err := storeURL(ctx, url, storage, log); err != nil {
+		var url models.ShortenedLink
+		if err := json.Unmarshal(data, &url); err != nil {
+			log.Warn().Err(err).Msg("Failed to unmarshal URL, skipping line")
+			continue
+		}
+
+		if err := storeURL(ctx, &url, storage, log); err != nil {
 			return 0, err
 		}
 		loadedCount++
 	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, logAndWrapError(log, err, ErrReadURL, "read file")
+	}
+
 	return loadedCount, nil
 }
 
@@ -207,42 +217,19 @@ func storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInt
 	return logAndWrapError(log, err, ErrSetURL, "set URL in storage")
 }
 
-func generateLoadResultMessage(loadedCount int, absPath string, log zerolog.Logger) (string, error) {
-	if loadedCount > 0 {
-		msg := fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath)
-		log.Info().Int("count", loadedCount).Str("path", absPath).Msg(msg)
-		return msg, nil
-	}
-
-	msg := fmt.Sprintf("No data loaded from %s (file exists but empty)", absPath)
-	log.Info().Str("path", absPath).Msg(msg)
-	return msg, nil
-}
-
-// Helper functions for Save
-
-func createDirectoryStructure(ctx context.Context, dir string, log zerolog.Logger) error {
-	if err := ctx.Err(); err != nil {
-		return logError(log, err, "context error")
-	}
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return logAndWrapError(log, err, ErrMkdirAll, "create directory structure")
-	}
-	return nil
-}
-
-func writeURLsToFile(ctx context.Context, absPath string, storage StorageInterface, log zerolog.Logger) error {
-	writer, err := newFileWriter(absPath)
+func writeURLsToFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) error {
+	file, err := os.Create(filePath)
 	if err != nil {
-		return logAndWrapError(log, err, ErrNewFileWriter, "create file writer")
+		return logAndWrapError(log, err, ErrCreateFile, "create file")
 	}
-	defer writer.close()
+	defer file.Close()
 
-	// Используем List с большим лимитом вместо GetAll
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
 	urls, err := storage.List(ctx, 1000000, 0)
 	if err != nil {
-		return logAndWrapError(log, err, ErrGetAllURLs, "get all URLs from storage")
+		return logAndWrapError(log, err, ErrGetAllURLs, "get URLs from storage")
 	}
 
 	for _, url := range urls {
@@ -250,96 +237,19 @@ func writeURLsToFile(ctx context.Context, absPath string, storage StorageInterfa
 			return logError(log, err, "context error")
 		}
 
-		if err := writer.writeURL(&url); err != nil {
-			return logAndWrapError(log, err, ErrWriteURL, "write URL to file")
+		data, err := json.Marshal(url)
+		if err != nil {
+			return logAndWrapError(log, err, ErrMarshalURL, "marshal URL")
+		}
+
+		if _, err := writer.Write(data); err != nil {
+			return logAndWrapError(log, err, ErrWriteData, "write data")
+		}
+
+		if err := writer.WriteByte('\n'); err != nil {
+			return logAndWrapError(log, err, ErrWriteNewLine, "write newline")
 		}
 	}
-	return nil
-}
 
-// File writer implementation (unchanged)
-type fileWriter struct {
-	file   *os.File
-	writer *bufio.Writer
-}
-
-func newFileWriter(filePath string) (*fileWriter, error) {
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrOpenFile, err)
-	}
-
-	return &fileWriter{
-		file:   file,
-		writer: bufio.NewWriter(file),
-	}, nil
-}
-
-func (w *fileWriter) writeURL(url *models.ShortenedLink) error {
-	data, err := json.Marshal(url)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMarshalURL, err)
-	}
-
-	if _, err := w.writer.Write(data); err != nil {
-		return fmt.Errorf("%w: %v", ErrWriteData, err)
-	}
-
-	if err := w.writer.WriteByte('\n'); err != nil {
-		return fmt.Errorf("%w: %v", ErrWriteNewLine, err)
-	}
-
-	return w.writer.Flush()
-}
-
-func (w *fileWriter) close() error {
-	if err := w.writer.Flush(); err != nil {
-		return fmt.Errorf("%w: %v", ErrFlushWriter, err)
-	}
-	if err := w.file.Close(); err != nil {
-		return fmt.Errorf("%w: %v", ErrCloseFile, err)
-	}
-	return nil
-}
-
-// File reader implementation (unchanged)
-type fileReader struct {
-	file   *os.File
-	reader *bufio.Reader
-}
-
-func newFileReader(filePath string) (*fileReader, error) {
-	file, err := os.OpenFile(filePath, os.O_RDONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrOpenFile, err)
-	}
-
-	return &fileReader{
-		file:   file,
-		reader: bufio.NewReader(file),
-	}, nil
-}
-
-func (r *fileReader) readURL() (*models.ShortenedLink, error) {
-	data, err := r.reader.ReadBytes('\n')
-	if err != nil {
-		if err == io.EOF && len(data) == 0 {
-			return nil, ErrEmptyFile
-		}
-		return nil, fmt.Errorf("%w: %v", ErrReadURL, err)
-	}
-
-	var url models.ShortenedLink
-	if err := json.Unmarshal(data, &url); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnmarshalURL, err)
-	}
-
-	return &url, nil
-}
-
-func (r *fileReader) close() error {
-	if err := r.file.Close(); err != nil {
-		return fmt.Errorf("%w: %v", ErrCloseFile, err)
-	}
-	return nil
+	return writer.Flush()
 }
