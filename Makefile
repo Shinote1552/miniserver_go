@@ -76,6 +76,89 @@ lines:
 	@echo "Summary code lines in this project: "
 	@find ./ -type f -exec cat {} + | wc -l
 
+
+
+
+
+
+
+# EXPERIMENTAL!!!
+SERVER_ADDRESS := localhost:8080
+COOKIE_FILE := /tmp/curl_cookie.txt
+SHORT_URL_FILE := /tmp/short_url.txt
+
+.PHONY: test_curl
+test_curl:
+	echo "=== Starting curl tests ==="
+	
+	# 1. Получаем JWT токен и сохраняем cookie
+	rm -f $(COOKIE_FILE) $(SHORT_URL_FILE)
+	curl -v -X POST http://$(SERVER_ADDRESS)/ -c $(COOKIE_FILE)
+	
+	# 2. Тестируем публичные endpoint'ы
+	echo "=== Testing public endpoints ==="
+	echo "GET /ping"
+	curl -v -X GET http://$(SERVER_ADDRESS)/ping
+	echo ""
+	
+	echo "GET / (default handler)"
+	curl -v -X GET http://$(SERVER_ADDRESS)/
+	echo ""
+	
+	# 3. Тестируем защищённые endpoint'ы
+	echo "=== Testing protected endpoints ==="
+	
+	# 3.1. Создаём URL через text/plain
+	echo "POST / (text/plain)"
+	curl -v -X POST \
+		-H "Content-Type: text/plain" \
+		-b $(COOKIE_FILE) \
+		-d "https://google.com" \
+		http://$(SERVER_ADDRESS)/ \
+		| tee $(SHORT_URL_FILE)
+	echo ""
+	
+	# 3.2. Создаём URL через application/json
+	echo "POST /api/shorten (application/json)"
+	curl -v -X POST \
+		-H "Content-Type: application/json" \
+		-b $(COOKIE_FILE) \
+		-d '{"url":"https://yandex.ru"}' \
+		http://$(SERVER_ADDRESS)/api/shorten
+	echo ""
+	
+	# 3.3. Пакетное создание URL
+	echo "POST /api/shorten/batch (batch create)"
+	curl -v -X POST \
+		-H "Content-Type: application/json" \
+		-b $(COOKIE_FILE) \
+		-d '[{"correlation_id": "1", "original_url": "https://google.com"}, {"correlation_id": "2", "original_url": "https://youtube.com"}]' \
+		http://$(SERVER_ADDRESS)/api/shorten/batch
+	echo ""
+	
+	# 3.4. Получаем список URL пользователя
+	echo "GET /api/user/urls"
+	curl -v -X GET \
+		-b $(COOKIE_FILE) \
+		http://$(SERVER_ADDRESS)/api/user/urls
+	echo ""
+	
+	# 4. Тестируем редирект
+	echo "=== Testing redirect ==="
+	echo "Testing redirect for: $$(cat $(SHORT_URL_FILE))"
+	curl -v -X GET $$(cat $(SHORT_URL_FILE))
+	echo ""
+	
+	# Очищаем временные файлы
+	rm -f $(COOKIE_FILE) $(SHORT_URL_FILE)
+	
+	echo "=== All tests completed ==="
+# EXPERIMENTAL!!!
+
+
+
+
+
 # in server psql -h localhost -p 5432 -U postgres -d gpx_test
 
 # Usage examples:

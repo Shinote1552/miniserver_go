@@ -33,7 +33,6 @@ type Server struct {
 }
 
 func NewServer(log *zerolog.Logger, cfg config.Config, svc *url_shortener.URLShortener, auth *auth.Authentication) (*Server, error) {
-
 	/*
 		хз по идее конфиг создается через фабрику где уже есть валидация и
 		стандартные значения, сюда по идее нереально подать пустую cfg
