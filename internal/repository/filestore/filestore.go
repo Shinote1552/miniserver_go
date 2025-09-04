@@ -53,7 +53,7 @@ func Load(ctx context.Context, log zerolog.Logger, filePath string, storage Stor
 	if filePath == "" {
 		msg := "No file path provided - using empty storage"
 		log.Info().Msg(msg)
-		return msg, true, nil // Файла нет = считаем его пустым
+		return msg, true, nil
 	}
 
 	absPath, err := filepath.Abs(filePath)
@@ -61,9 +61,7 @@ func Load(ctx context.Context, log zerolog.Logger, filePath string, storage Stor
 		return "", false, logAndWrapError(log, err, ErrAbsPath, "get absolute path")
 	}
 
-	// Проверяем существование файла
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		// Файл не существует - создаем директорию и пустой файл
 		dir := filepath.Dir(absPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return "", false, logAndWrapError(log, err, ErrCreateDir, "create directory")
@@ -80,7 +78,6 @@ func Load(ctx context.Context, log zerolog.Logger, filePath string, storage Stor
 		return msg, true, nil
 	}
 
-	// Проверяем, пуст ли файл
 	isEmpty, err := isFileEmpty(absPath)
 	if err != nil {
 		return "", false, logAndWrapError(log, err, ErrOpenFile, "check file size")
@@ -92,8 +89,7 @@ func Load(ctx context.Context, log zerolog.Logger, filePath string, storage Stor
 		return msg, true, nil
 	}
 
-	// Загружаем данные из файла
-	loadedCount, err := loadURLsFromFile(ctx, absPath, storage, log)
+	loadedCount, err := loadDataFromFile(ctx, absPath, storage, log)
 	if err != nil {
 		return "", false, err
 	}
@@ -123,7 +119,7 @@ func Save(ctx context.Context, log *zerolog.Logger, filePath string, storage Sto
 		return dir, err
 	}
 
-	if err := writeURLsToFile(ctx, absPath, storage, *log); err != nil {
+	if err := writeDataToFile(ctx, absPath, storage, *log); err != nil {
 		return dir, err
 	}
 
@@ -164,7 +160,7 @@ func createDirectoryIfNotExists(ctx context.Context, dir string, log zerolog.Log
 }
 
 // Core loading and saving functions
-func loadURLsFromFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (int, error) {
+func loadDataFromFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return 0, logAndWrapError(log, err, ErrOpenFile, "open file")
@@ -217,7 +213,7 @@ func storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInt
 	return logAndWrapError(log, err, ErrSetURL, "set URL in storage")
 }
 
-func writeURLsToFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) error {
+func writeDataToFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) error {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return logAndWrapError(log, err, ErrCreateFile, "create file")
@@ -227,6 +223,7 @@ func writeURLsToFile(ctx context.Context, filePath string, storage StorageInterf
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
+	// TODO List with 1000000 is not a good option
 	urls, err := storage.List(ctx, 1000000, 0)
 	if err != nil {
 		return logAndWrapError(log, err, ErrGetAllURLs, "get URLs from storage")
