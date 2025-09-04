@@ -3,12 +3,14 @@ package inmemory
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 	"urlshortener/domain/models"
 	"urlshortener/internal/repository/dto"
 )
 
 type InmemoryStorage struct {
+	rwmu       sync.RWMutex
 	data       map[string]dto.ShortenedLinkDB
 	users      map[int64]dto.UserDB
 	lastURLID  int64
@@ -34,6 +36,9 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	if url.ShortCode == "" || url.OriginalURL == "" || url.UserID <= 0 {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
+
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
 
 	// Check for existing URL with same short code
 	if existingURL, exists := m.data[url.ShortCode]; exists {
@@ -70,6 +75,9 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
+
 	url, exists := m.data[shortKey]
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
@@ -85,6 +93,9 @@ func (m *InmemoryStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 	if originalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
+
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
 
 	for _, url := range m.data {
 		if url.OriginalURL == originalURL {
@@ -102,6 +113,9 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	if len(urls) == 0 {
 		return nil, models.ErrInvalidData
 	}
+
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
 
 	result := make([]models.ShortenedLink, 0, len(urls))
 	for _, url := range urls {
@@ -154,6 +168,9 @@ func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, original
 		return nil, models.ErrInvalidData
 	}
 
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
+
 	result := make([]models.ShortenedLink, 0, len(originalURLs))
 	for _, originalURL := range originalURLs {
 		for _, url := range m.data {
@@ -173,6 +190,8 @@ func (m *InmemoryStorage) UserCreate(ctx context.Context, user models.User) (mod
 		return models.User{}, models.ErrInvalidData
 	}
 
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
 	m.lastUserID++
 	userDB := dto.UserDBFromDomain(user)
 	userDB.ID = m.lastUserID
@@ -193,6 +212,9 @@ func (m *InmemoryStorage) UserGetByID(ctx context.Context, id int64) (models.Use
 		return models.User{}, models.ErrInvalidData
 	}
 
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
+
 	user, exists := m.users[id]
 	if !exists {
 		return models.User{}, models.ErrUnfound
@@ -208,6 +230,9 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 	if userID <= 0 {
 		return nil, models.ErrInvalidData
 	}
+
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
 
 	var result []models.ShortenedLink
 	for _, url := range m.data {
@@ -232,6 +257,9 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 	if limit <= 0 || offset < 0 {
 		return nil, models.ErrInvalidData
 	}
+
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
 
 	// Get all URLs from storage
 	allURLs := make([]models.ShortenedLink, 0, len(m.data))
@@ -266,6 +294,9 @@ func (m *InmemoryStorage) Ping(ctx context.Context) error {
 }
 
 func (m *InmemoryStorage) Close() error {
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
+
 	m.data = make(map[string]dto.ShortenedLinkDB)
 	m.users = make(map[int64]dto.UserDB)
 	m.lastURLID = 0
@@ -282,6 +313,9 @@ func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
 		return models.ErrInvalidData
 	}
 
+	m.rwmu.Lock()
+	defer m.rwmu.Unlock()
+
 	if _, exists := m.data[shortKey]; !exists {
 		return models.ErrUnfound
 	}
@@ -294,6 +328,9 @@ func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, e
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
 	}
+
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
 
 	result := make([]models.ShortenedLink, 0, len(m.data))
 	for _, url := range m.data {
@@ -311,6 +348,9 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 	if originalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
+
+	m.rwmu.RLock()
+	defer m.rwmu.RUnlock()
 
 	for _, url := range m.data {
 		if url.OriginalURL == originalURL {
