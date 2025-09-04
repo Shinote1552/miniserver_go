@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"urlshortener/domain/models"
 
 	"github.com/rs/zerolog"
@@ -37,6 +38,21 @@ var (
 	ErrWriteNewLine = errors.New("failed to write new line")
 )
 
+// FileStore представляет потокобезопасный менеджер файлового хранилища
+type FileStore struct {
+	mu       sync.Mutex
+	filePath string
+	log      zerolog.Logger
+}
+
+// NewFileStore создает новый экземпляр FileStore
+func NewFileStore(log zerolog.Logger, filePath string) *FileStore {
+	return &FileStore{
+		filePath: filePath,
+		log:      log,
+	}
+}
+
 // StorageInterface - ограниченный интерфейс для работы с filestore
 type StorageInterface interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error)
@@ -45,102 +61,110 @@ type StorageInterface interface {
 }
 
 // Load loads URLs from file into storage and returns whether file was empty
-func Load(ctx context.Context, log zerolog.Logger, filePath string, storage StorageInterface) (string, bool, error) {
+func (fs *FileStore) Load(ctx context.Context, storage StorageInterface) (string, bool, error) {
+
 	if err := ctx.Err(); err != nil {
-		return "", false, logError(log, err, "context error")
+		return "", false, fs.logError(err, "context error")
 	}
 
-	if filePath == "" {
+	if fs.filePath == "" {
 		msg := "No file path provided - using empty storage"
-		log.Info().Msg(msg)
+		fs.log.Info().Msg(msg)
 		return msg, true, nil
 	}
 
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := filepath.Abs(fs.filePath)
 	if err != nil {
-		return "", false, logAndWrapError(log, err, ErrAbsPath, "get absolute path")
+		return "", false, fs.logAndWrapError(err, ErrAbsPath, "get absolute path")
 	}
+
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		dir := filepath.Dir(absPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return "", false, logAndWrapError(log, err, ErrCreateDir, "create directory")
+			return "", false, fs.logAndWrapError(err, ErrCreateDir, "create directory")
 		}
 
 		file, err := os.Create(absPath)
 		if err != nil {
-			return "", false, logAndWrapError(log, err, ErrCreateFile, "create file")
+			return "", false, fs.logAndWrapError(err, ErrCreateFile, "create file")
 		}
 		file.Close()
 
 		msg := fmt.Sprintf("File %s created as empty", absPath)
-		log.Info().Msg(msg)
+		fs.log.Info().Msg(msg)
 		return msg, true, nil
 	}
 
-	isEmpty, err := isFileEmpty(absPath)
+	isEmpty, err := fs.isFileEmpty(absPath)
 	if err != nil {
-		return "", false, logAndWrapError(log, err, ErrOpenFile, "check file size")
+		return "", false, fs.logAndWrapError(err, ErrOpenFile, "check file size")
 	}
 
 	if isEmpty {
 		msg := fmt.Sprintf("File %s is empty", absPath)
-		log.Info().Msg(msg)
+		fs.log.Info().Msg(msg)
 		return msg, true, nil
 	}
 
-	loadedCount, err := loadDataFromFile(ctx, absPath, storage, log)
+	loadedCount, err := fs.loadDataFromFile(ctx, absPath, storage)
 	if err != nil {
 		return "", false, err
 	}
 
 	msg := fmt.Sprintf("Successfully loaded %d URLs from %s", loadedCount, absPath)
-	log.Info().Int("count", loadedCount).Str("path", absPath).Msg(msg)
-	return msg, false, nil // Файл не был пустым
+	fs.log.Info().Int("count", loadedCount).Str("path", absPath).Msg(msg)
+	return msg, false, nil
 }
 
 // Save saves URLs from storage to file
-func Save(ctx context.Context, log *zerolog.Logger, filePath string, storage StorageInterface) (string, error) {
+func (fs *FileStore) Save(ctx context.Context, storage StorageInterface) (string, error) {
+
 	if err := ctx.Err(); err != nil {
-		return "", logError(*log, err, "context error")
+		return "", fs.logError(err, "context error")
 	}
 
-	if filePath == "" {
-		return "", logError(*log, ErrInvalidDir, "invalid directory path")
+	if fs.filePath == "" {
+		return "", fs.logError(ErrInvalidDir, "invalid directory path")
 	}
 
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := filepath.Abs(fs.filePath)
 	if err != nil {
-		return "", logAndWrapError(*log, err, ErrInvalidDir, "get absolute path")
+		return "", fs.logAndWrapError(err, ErrInvalidDir, "get absolute path")
 	}
+
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 
 	dir := filepath.Dir(absPath)
-	if err := createDirectoryIfNotExists(ctx, dir, *log); err != nil {
+	if err := fs.createDirectoryIfNotExists(ctx, dir); err != nil {
 		return dir, err
 	}
 
-	if err := writeDataToFile(ctx, absPath, storage, *log); err != nil {
+	if err := fs.writeDataToFile(ctx, absPath, storage); err != nil {
 		return dir, err
 	}
 
 	msg := fmt.Sprintf("Data successfully saved to %s", absPath)
-	log.Info().Str("path", absPath).Msg(msg)
+	fs.log.Info().Str("path", absPath).Msg(msg)
 	return msg, nil
 }
 
 // Helper functions for error handling
-func logError(log zerolog.Logger, err error, msg string) error {
-	log.Error().Err(err).Msg(msg)
+func (fs *FileStore) logError(err error, msg string) error {
+	fs.log.Error().Err(err).Msg(msg)
 	return err
 }
 
-func logAndWrapError(log zerolog.Logger, err error, wrapErr error, context string) error {
-	log.Error().Err(err).Str("context", context).Msg(wrapErr.Error())
+func (fs *FileStore) logAndWrapError(err error, wrapErr error, context string) error {
+	fs.log.Error().Err(err).Str("context", context).Msg(wrapErr.Error())
 	return fmt.Errorf("%w: %v", wrapErr, err)
 }
 
 // Helper functions for file operations
-func isFileEmpty(path string) (bool, error) {
+func (fs *FileStore) isFileEmpty(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return false, err
@@ -148,22 +172,22 @@ func isFileEmpty(path string) (bool, error) {
 	return info.Size() == 0, nil
 }
 
-func createDirectoryIfNotExists(ctx context.Context, dir string, log zerolog.Logger) error {
+func (fs *FileStore) createDirectoryIfNotExists(ctx context.Context, dir string) error {
 	if err := ctx.Err(); err != nil {
-		return logError(log, err, "context error")
+		return fs.logError(err, "context error")
 	}
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return logAndWrapError(log, err, ErrMkdirAll, "create directory structure")
+		return fs.logAndWrapError(err, ErrMkdirAll, "create directory structure")
 	}
 	return nil
 }
 
 // Core loading and saving functions
-func loadDataFromFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) (int, error) {
+func (fs *FileStore) loadDataFromFile(ctx context.Context, filePath string, storage StorageInterface) (int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return 0, logAndWrapError(log, err, ErrOpenFile, "open file")
+		return 0, fs.logAndWrapError(err, ErrOpenFile, "open file")
 	}
 	defer file.Close()
 
@@ -172,7 +196,7 @@ func loadDataFromFile(ctx context.Context, filePath string, storage StorageInter
 
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return 0, logError(log, err, "context error")
+			return 0, fs.logError(err, "context error")
 		}
 
 		data := scanner.Bytes()
@@ -182,71 +206,106 @@ func loadDataFromFile(ctx context.Context, filePath string, storage StorageInter
 
 		var url models.ShortenedLink
 		if err := json.Unmarshal(data, &url); err != nil {
-			log.Warn().Err(err).Msg("Failed to unmarshal URL, skipping line")
+			fs.log.Warn().Err(err).Msg("Failed to unmarshal URL, skipping line")
 			continue
 		}
 
-		if err := storeURL(ctx, &url, storage, log); err != nil {
+		if err := fs.storeURL(ctx, &url, storage); err != nil {
 			return 0, err
 		}
 		loadedCount++
 	}
 
 	if err := scanner.Err(); err != nil {
-		return 0, logAndWrapError(log, err, ErrReadURL, "read file")
+		return 0, fs.logAndWrapError(err, ErrReadURL, "read file")
 	}
 
 	return loadedCount, nil
 }
 
-func storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInterface, log zerolog.Logger) error {
+func (fs *FileStore) storeURL(ctx context.Context, url *models.ShortenedLink, storage StorageInterface) error {
 	_, err := storage.ShortenedLinkCreate(ctx, *url)
 	if err == nil {
 		return nil
 	}
 
 	if errors.Is(err, ErrConflict) {
-		log.Info().Str("short_url", url.ShortCode).Msg("Skipping duplicate URL")
+		fs.log.Info().Str("short_url", url.ShortCode).Msg("Skipping duplicate URL")
 		return nil
 	}
 
-	return logAndWrapError(log, err, ErrSetURL, "set URL in storage")
+	return fs.logAndWrapError(err, ErrSetURL, "set URL in storage")
 }
 
-func writeDataToFile(ctx context.Context, filePath string, storage StorageInterface, log zerolog.Logger) error {
+func (fs *FileStore) writeDataToFile(ctx context.Context, filePath string, storage StorageInterface) error {
 	file, err := os.Create(filePath)
 	if err != nil {
-		return logAndWrapError(log, err, ErrCreateFile, "create file")
+		return fs.logAndWrapError(err, ErrCreateFile, "create file")
 	}
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
 	defer writer.Flush()
 
-	// TODO List with 1000000 is not a good option
-	urls, err := storage.List(ctx, 1000000, 0)
-	if err != nil {
-		return logAndWrapError(log, err, ErrGetAllURLs, "get URLs from storage")
-	}
+	// Используем пагинацию для больших объемов данных
+	limit := 1000
+	offset := 0
+	totalWritten := 0
 
-	for _, url := range urls {
+	for {
 		if err := ctx.Err(); err != nil {
-			return logError(log, err, "context error")
+			return fs.logError(err, "context error")
 		}
 
-		data, err := json.Marshal(url)
+		urls, err := storage.List(ctx, limit, offset)
 		if err != nil {
-			return logAndWrapError(log, err, ErrMarshalURL, "marshal URL")
+			return fs.logAndWrapError(err, ErrGetAllURLs, "get URLs from storage")
 		}
 
-		if _, err := writer.Write(data); err != nil {
-			return logAndWrapError(log, err, ErrWriteData, "write data")
+		if len(urls) == 0 {
+			break
 		}
 
-		if err := writer.WriteByte('\n'); err != nil {
-			return logAndWrapError(log, err, ErrWriteNewLine, "write newline")
+		for _, url := range urls {
+			data, err := json.Marshal(url)
+			if err != nil {
+				return fs.logAndWrapError(err, ErrMarshalURL, "marshal URL")
+			}
+
+			if _, err := writer.Write(data); err != nil {
+				return fs.logAndWrapError(err, ErrWriteData, "write data")
+			}
+
+			if err := writer.WriteByte('\n'); err != nil {
+				return fs.logAndWrapError(err, ErrWriteNewLine, "write newline")
+			}
+			totalWritten++
 		}
+
+		// Если получили меньше записей, чем лимит, значит это последняя страница
+		if len(urls) < limit {
+			break
+		}
+
+		offset += limit
 	}
 
+	fs.log.Info().Int("count", totalWritten).Msg("Total URLs written to file")
 	return writer.Flush()
+}
+
+// GetFilePath возвращает путь к файлу (только для чтения)
+func (fs *FileStore) GetFilePath() string {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	return fs.filePath
+}
+
+// SetFilePath устанавливает новый путь к файлу (потокобезопасно)
+func (fs *FileStore) SetFilePath(newPath string) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	fs.filePath = newPath
 }

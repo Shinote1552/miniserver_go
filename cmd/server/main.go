@@ -24,6 +24,8 @@ func main() {
 	ctxRoot := context.Background()
 	cfg := config.NewConfig()
 	log := logger.NewLogger()
+	fileStore := filestore.NewFileStore(*log, cfg.FileStoragePath)
+
 	var urlService *url_shortener.URLShortener
 	var authService *auth.Authentication
 
@@ -38,8 +40,8 @@ func main() {
 		} else {
 
 			defer closePostgresStorage(log, storage)
-			defer savePostgresData(ctxRoot, log, *cfg, storage)
-			initPostgresData(ctxRoot, log, *cfg, storage)
+			defer savePostgresData(ctxRoot, log, storage, fileStore)
+			initPostgresData(ctxRoot, log, storage, fileStore)
 
 			var errAuth error
 			urlService = url_shortener.NewServiceURLShortener(storage, cfg.BaseURL)
@@ -62,8 +64,8 @@ func main() {
 
 		storage := initInMemory(log)
 		defer closeInMemoryStorage(log, storage)
-		defer saveInMemoryData(ctxRoot, log, *cfg, storage)
-		initInMemoryData(ctxRoot, log, *cfg, storage)
+		defer saveInMemoryData(ctxRoot, log, storage, fileStore)
+		initInMemoryData(ctxRoot, log, storage, fileStore)
 
 		var errAuth error
 		urlService = url_shortener.NewServiceURLShortener(storage, cfg.BaseURL)
@@ -197,20 +199,20 @@ func closeInMemoryStorage(log *zerolog.Logger, storage *inmemory.InmemoryStorage
 }
 
 // Для PostgreSQL хранилища
-func initPostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *postgres.PostgresStorage) {
-	if cfg.FileStoragePath == "" {
+func initPostgresData(ctx context.Context, log *zerolog.Logger, storage *postgres.PostgresStorage, fileStore *filestore.FileStore) {
+	if fileStore.GetFilePath() == "" {
 		log.
 			Info().
 			Msg("No file storage path specified, skip loading data to PostgreSQL")
 		return
 	}
 
-	path, isEmpty, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
+	path, isEmpty, err := fileStore.Load(ctx, storage)
 	if err != nil {
 		log.
 			Error().
 			Err(err).
-			Str("path", cfg.FileStoragePath).
+			Str("path", fileStore.GetFilePath()).
 			Msg("Failed to load data from file to PostgreSQL")
 		return
 	}
@@ -224,15 +226,15 @@ func initPostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 	}
 }
 
-func savePostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *postgres.PostgresStorage) {
-	if cfg.FileStoragePath == "" {
+func savePostgresData(ctx context.Context, log *zerolog.Logger, storage *postgres.PostgresStorage, fileStore *filestore.FileStore) {
+	if fileStore.GetFilePath() == "" {
 		log.
 			Info().
 			Msg("No file storage path specified, skip saving PostgreSQL data")
 		return
 	}
 
-	path, err := filestore.Save(ctx, log, cfg.FileStoragePath, storage)
+	path, err := fileStore.Save(ctx, storage)
 	if err != nil {
 		log.
 			Error().
@@ -248,21 +250,20 @@ func savePostgresData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 		Msg("PostgreSQL data saved successfully to file")
 }
 
-// Для InMemory хранилища
-func initInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *inmemory.InmemoryStorage) {
-	if cfg.FileStoragePath == "" {
+func initInMemoryData(ctx context.Context, log *zerolog.Logger, storage *inmemory.InmemoryStorage, fileStore *filestore.FileStore) {
+	if fileStore.GetFilePath() == "" {
 		log.
 			Info().
 			Msg("No file storage path specified, skip loading data to in-memory storage")
 		return
 	}
 
-	path, isEmpty, err := filestore.Load(ctx, *log, cfg.FileStoragePath, storage)
+	path, isEmpty, err := fileStore.Load(ctx, storage)
 	if err != nil {
 		log.
 			Error().
 			Err(err).
-			Str("path", cfg.FileStoragePath).
+			Str("path", fileStore.GetFilePath()).
 			Msg("Failed to load data from file to in-memory storage")
 		return
 	}
@@ -276,15 +277,16 @@ func initInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Confi
 	}
 }
 
-func saveInMemoryData(ctx context.Context, log *zerolog.Logger, cfg config.Config, storage *inmemory.InmemoryStorage) {
-	if cfg.FileStoragePath == "" {
+func saveInMemoryData(ctx context.Context, log *zerolog.Logger, storage *inmemory.InmemoryStorage, fileStore *filestore.FileStore) {
+	if fileStore.GetFilePath() == "" {
+
 		log.
 			Info().
 			Msg("No file storage path specified, skip saving in-memory data")
 		return
 	}
 
-	path, err := filestore.Save(ctx, log, cfg.FileStoragePath, storage)
+	path, err := fileStore.Save(ctx, storage)
 	if err != nil {
 		log.
 			Error().
