@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 	"urlshortener/internal/repository/dto"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -44,11 +44,6 @@ func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	if err := createTable(ctx, db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("failed to create tables: %w", err)
-	}
-
 	return &PostgresStorage{db: db}, nil
 }
 
@@ -57,32 +52,6 @@ func initConnectionPools(db *sql.DB) {
 	db.SetMaxIdleConns(storageMaxIdleConnections)
 	db.SetConnMaxIdleTime(storageConnectionsMaxIdleTime)
 	db.SetConnMaxLifetime(storageConnectionsLifetime)
-}
-
-func createTable(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-    CREATE TABLE IF NOT EXISTS users(
-        id BIGSERIAL PRIMARY KEY,
-        created_at TIMESTAMP NOT NULL
-    )`)
-	if err != nil {
-		return fmt.Errorf("failed to create users table: %w", err)
-	}
-
-	_, err = db.ExecContext(ctx, `
-        CREATE TABLE IF NOT EXISTS urls (
-            id BIGSERIAL PRIMARY KEY,
-            short_key VARCHAR(10) UNIQUE NOT NULL,
-            original_url TEXT NOT NULL,
-            user_id BIGINT REFERENCES users(id),
-            created_at TIMESTAMP NOT NULL,
-            UNIQUE (original_url)
-        )`)
-	if err != nil {
-		return fmt.Errorf("failed to create urls table: %w", err)
-	}
-
-	return nil
 }
 
 func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
@@ -328,7 +297,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	}
 
 	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls LIMIT $1 OFFSET $2",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls LIMIT $1 OFFSET $2 ORDER BY created_at DESC",
 		limit, offset,
 	)
 	if err != nil {

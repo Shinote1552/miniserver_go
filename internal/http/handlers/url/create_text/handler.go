@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 	"urlshortener/internal/http/dto"
 	"urlshortener/internal/http/httputils"
 )

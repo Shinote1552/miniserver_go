@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 
 	"github.com/rs/zerolog"
 )

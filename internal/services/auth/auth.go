@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -14,6 +14,8 @@ import (
 type UserStorage interface {
 	UserCreate(ctx context.Context, user models.User) (models.User, error)
 	UserGetByID(ctx context.Context, id int64) (models.User, error)
+
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error)
 }
 
 type Authentication struct {

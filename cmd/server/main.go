@@ -38,7 +38,6 @@ func main() {
 				Msg("Failed to initialize PostgreSQL storage")
 
 		} else {
-
 			defer closePostgresStorage(log, storage)
 			defer savePostgresData(ctxRoot, log, storage, fileStore)
 			initPostgresData(ctxRoot, log, storage, fileStore)

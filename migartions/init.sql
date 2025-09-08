@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS users(
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS urls (
+    id BIGSERIAL PRIMARY KEY,
+    short_key VARCHAR(10) UNIQUE NOT NULL,
+    original_url TEXT NOT NULL,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (original_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_urls_user_id ON urls(user_id);
+CREATE INDEX IF NOT EXISTS idx_urls_short_key ON urls(short_key);
+CREATE INDEX IF NOT EXISTS idx_urls_original_url ON urls(original_url);

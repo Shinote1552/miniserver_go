@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
-	"urlshortener/domain/models"
-	"urlshortener/mocks"
+	"urlshortener/internal/domain/mocks"
+	"urlshortener/internal/domain/models"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"

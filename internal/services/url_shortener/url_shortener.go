@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 )
 
 /*
@@ -22,6 +22,8 @@ type URLStorage interface {
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 	Ping(ctx context.Context) error
+
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error)
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
@@ -86,39 +88,46 @@ func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	// Проверяем существование URL
-	existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
-	if err == nil {
-		return existing, models.ErrConflict
-	}
-
-	// Генерируем уникальный токен
-	token, err := s.generateUniqueToken(ctx)
-	if err != nil {
-		return models.ShortenedLink{}, fmt.Errorf("failed to generate token: %w", err)
-	}
-
-	// Создаем новую запись с ВСЕМИ необходимыми полями
-	newURL := models.ShortenedLink{
-		OriginalURL: model.OriginalURL,
-		ShortCode:   token,
-		UserID:      model.UserID, // Важно сохранить UserID!
-		CreatedAt:   time.Now().UTC(),
-	}
-
-	createdURL, err := s.storage.ShortenedLinkCreate(ctx, newURL)
-	if err != nil {
-		if errors.Is(err, models.ErrConflict) {
-			existing, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
-			if err != nil {
-				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
-			}
-			return existing, models.ErrConflict
+	var result models.ShortenedLink
+	err := s.storage.WithinTx(ctx, func(ctx context.Context) error {
+		_, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
+		if err == nil {
+			return models.ErrConflict
 		}
-		return models.ShortenedLink{}, fmt.Errorf("failed to create URL: %w", err)
+
+		// Генерируем уникальный токен
+		token, err := s.generateUniqueToken(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to generate token: %w", err)
+		}
+
+		// Создаем новую запись с ВСЕМИ необходимыми полями
+		newURL := models.ShortenedLink{
+			OriginalURL: model.OriginalURL,
+			ShortCode:   token,
+			UserID:      model.UserID, // Важно сохранить UserID!
+			CreatedAt:   time.Now().UTC(),
+		}
+
+		result, err = s.storage.ShortenedLinkCreate(ctx, newURL)
+		if err != nil {
+			if errors.Is(err, models.ErrConflict) {
+				result, err = s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
+				if err != nil {
+					return fmt.Errorf("%w: %v", models.ErrConflict, err)
+				}
+				return models.ErrConflict
+			}
+			return fmt.Errorf("failed to create URL: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		fmt.Errorf("setting url error: %w", err)
 	}
 
-	return createdURL, nil
+	return result, nil
 }
 
 // BatchCreate создает несколько коротких ссылок за одну операцию

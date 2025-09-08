@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 	"urlshortener/internal/repository/dto"
 )
 
@@ -359,4 +359,8 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 	}
 
 	return models.ShortenedLink{}, nil
+}
+
+func (m *InmemoryStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
+	return nil
 }

@@ -2,7 +2,7 @@ package dto
 
 import (
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 )
 
 // DTO БД для работы с БД
