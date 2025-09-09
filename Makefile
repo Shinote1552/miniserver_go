@@ -1,4 +1,3 @@
-.PHONY: db-up db-new db-down run up clean
 
 # PostgreSQL configuration
 POSTGRES_IMAGE := postgres:bookworm
@@ -7,32 +6,25 @@ POSTGRES_DB := gpx_test
 POSTGRES_USER := postgres
 POSTGRES_PASSWORD := admin
 POSTGRES_PORT := 5432
+POSTGRES_DSN := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 
 # Migration configuration
 MIGRATIONS_DIR := migrations
 
-
-# go generate (если настроены //go:generate комментарии)
-mockgen:
-	@echo "Generating using go generate..."
-	@go generate ./...
-	@echo "Generation complete"
-
-# Apply migrations
+# Apply migrations manually
 db-migrate:
 	@echo "Applying migrations..."
 	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < $(MIGRATIONS_DIR)/init.sql
 	@echo "Migrations applied successfully"
 
-
 # Start existing container
 db-up:
 	@echo "Starting existing PostgreSQL container..."
 	@docker start $(POSTGRES_CONTAINER) || (echo "Container not found. Use 'make db-new'"; exit 1)
-	@sleep 2  # Wait for container to start
+	@sleep 2
 	@echo "PostgreSQL running on port $(POSTGRES_PORT)"
 
-# Create new container (with automatic removal of old one)
+# Create new container WITHOUT volume mount
 db-new:
 	@echo "Creating new PostgreSQL container..."
 	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
@@ -42,23 +34,16 @@ db-new:
 		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
 		-e POSTGRES_DB=$(POSTGRES_DB) \
 		-p $(POSTGRES_PORT):5432 \
-		-v $(PWD)/$(MIGRATIONS_DIR):/docker-entrypoint-initdb.d \
 		$(POSTGRES_IMAGE)
 	@echo "New container created and running on port $(POSTGRES_PORT)"
-	@sleep 5  # Allow time for initialization and migration execution
-
+	@sleep 5  # Ждем запуска PostgreSQL
+	@make db-migrate  # Применяем миграции
 
 # Stop container
 db-down:
 	@echo "Stopping PostgreSQL container..."
 	@docker stop $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
 	@echo "Container stopped"
-
-build_static:
-	go build -tags netgo -ldflags '-extldflags "-static"' cmd/server/main.go
-
-build:
-	go build -ldflags "-s -w" cmd/server/main.go
 
 # Start server
 run:
@@ -74,13 +59,6 @@ test-db: db-new
 	@echo "Running tests with database..."
 	@DATABASE_DSN="$(POSTGRES_DSN)" go test ./... -v
 	@make db-down
-
-
-cover: 
-	@go test -cover ./...
-
-test:
-	@go test ./...
 
 # Cleanup
 clean: db-down
