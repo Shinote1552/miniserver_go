@@ -8,6 +8,7 @@ import (
 	"time"
 	"urlshortener/internal/domain/models"
 	"urlshortener/internal/repository/dto"
+	"urlshortener/internal/repository/postgres/txmanager"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -21,7 +22,8 @@ const (
 )
 
 type PostgresStorage struct {
-	db *sql.DB
+	db  *sql.DB
+	txm txmanager.TxManager
 }
 
 func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
@@ -40,7 +42,10 @@ func NewStorage(ctx context.Context, dsn string) (*PostgresStorage, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &PostgresStorage{db: db}, nil
+	return &PostgresStorage{
+		db:  db,
+		txm: txmanager.NewSQLTxManager(db),
+	}, nil
 }
 
 func initConnectionPools(db *sql.DB) {
@@ -50,13 +55,29 @@ func initConnectionPools(db *sql.DB) {
 	db.SetConnMaxLifetime(storageConnectionsLifetime)
 }
 
+// WithinTx делегирует управление транзакциями TxManager
+func (p *PostgresStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return p.txm.WithinTx(ctx, fn)
+}
+
 func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
 	userDB := dto.UserDBFromDomain(user)
 
-	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO users(created_at)
-		VALUES ($1)
-		RETURNING id`, userDB.CreatedAt).Scan(&userDB.ID)
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		// Если транзакции нет, используем обычное соединение
+		err = p.db.QueryRowContext(ctx,
+			`INSERT INTO users(created_at)
+			VALUES ($1)
+			RETURNING id`, userDB.CreatedAt).Scan(&userDB.ID)
+	} else {
+		// Используем транзакцию
+		err = tx.QueryRowContext(ctx,
+			`INSERT INTO users(created_at)
+			VALUES ($1)
+			RETURNING id`, userDB.CreatedAt).Scan(&userDB.ID)
+	}
 
 	if err != nil {
 		return models.User{}, fmt.Errorf("failed to create user: %w", err)
@@ -77,10 +98,19 @@ func (p *PostgresStorage) UserGetByID(ctx context.Context, id int64) (models.Use
 
 	var userDB dto.UserDB
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, created_at
-		FROM users
-		WHERE id = $1`, id).Scan(&userDB.ID, &userDB.CreatedAt)
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		err = p.db.QueryRowContext(ctx,
+			`SELECT id, created_at
+			FROM users
+			WHERE id = $1`, id).Scan(&userDB.ID, &userDB.CreatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx,
+			`SELECT id, created_at
+			FROM users
+			WHERE id = $1`, id).Scan(&userDB.ID, &userDB.CreatedAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -98,11 +128,24 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 		return nil, models.ErrInvalidData
 	}
 
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, short_key, original_url, user_id, created_at 
-		FROM urls 
-		WHERE user_id = $1 
-		ORDER BY created_at`, id)
+	var rows *sql.Rows
+	var err error
+
+	// Используем транзакцию из контекста
+	tx, txErr := txmanager.GetTx(ctx)
+	if txErr != nil {
+		rows, err = p.db.QueryContext(ctx,
+			`SELECT id, short_key, original_url, user_id, created_at 
+			FROM urls 
+			WHERE user_id = $1 
+			ORDER BY created_at`, id)
+	} else {
+		rows, err = tx.QueryContext(ctx,
+			`SELECT id, short_key, original_url, user_id, created_at 
+			FROM urls 
+			WHERE user_id = $1 
+			ORDER BY created_at`, id)
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user links: %w", err)
@@ -140,13 +183,25 @@ func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	dbURL := dto.ShortenedLinkDBFromDomain(url)
 	var result dto.ShortenedLinkDB
 
-	err := p.db.QueryRowContext(ctx, `
-		INSERT INTO urls (short_key, original_url, user_id, created_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (original_url) DO NOTHING
-		RETURNING id, short_key, original_url, user_id, created_at`,
-		dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		err = p.db.QueryRowContext(ctx, `
+			INSERT INTO urls (short_key, original_url, user_id, created_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (original_url) DO NOTHING
+			RETURNING id, short_key, original_url, user_id, created_at`,
+			dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO urls (short_key, original_url, user_id, created_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (original_url) DO NOTHING
+			RETURNING id, short_key, original_url, user_id, created_at`,
+			dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -169,10 +224,20 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	}
 
 	var result dto.ShortenedLinkDB
-	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
-		shortKey,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		err = p.db.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
+			shortKey,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
+			shortKey,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -190,10 +255,20 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 	}
 
 	var result dto.ShortenedLinkDB
-	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
-		originalURL,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		err = p.db.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			originalURL,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			originalURL,
+		).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -206,16 +281,28 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 }
 
 func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
-	tx, err := p.db.BeginTx(ctx, nil)
+	// Проверяем есть ли транзакция в контексте
+	_, err := txmanager.GetTx(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		// Если транзакции нет в контексте, создаем новую
+		var result []models.ShortenedLink
+		err = p.WithinTx(ctx, func(ctx context.Context) error {
+			var innerErr error
+			result, innerErr = p.shortenedLinkBatchCreateWithinTx(ctx, urls)
+			return innerErr
+		})
+		return result, err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	// Используем существующую транзакцию
+	return p.shortenedLinkBatchCreateWithinTx(ctx, urls)
+}
+
+func (p *PostgresStorage) shortenedLinkBatchCreateWithinTx(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no transaction in context")
+	}
 
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO urls (short_key, original_url, user_id, created_at)
@@ -249,10 +336,6 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
 	return result, nil
 }
 
@@ -261,7 +344,29 @@ func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
 		return models.ErrInvalidData
 	}
 
-	result, err := p.db.ExecContext(ctx,
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		result, err := p.db.ExecContext(ctx,
+			"DELETE FROM urls WHERE short_key = $1",
+			shortKey,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to delete URL: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return models.ErrUnfound
+		}
+		return nil
+	}
+
+	result, err := tx.ExecContext(ctx,
 		"DELETE FROM urls WHERE short_key = $1",
 		shortKey,
 	)
@@ -286,7 +391,35 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 		return nil, models.ErrInvalidData
 	}
 
-	rows, err := p.db.QueryContext(ctx,
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		rows, err := p.db.QueryContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+			limit, offset,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query URLs: %w", err)
+		}
+		defer rows.Close()
+
+		var urls []models.ShortenedLink
+		for rows.Next() {
+			var dbURL dto.ShortenedLinkDB
+			if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt); err != nil {
+				return nil, fmt.Errorf("failed to scan URL: %w", err)
+			}
+			urls = append(urls, dto.ShortenedLinkDBToDomain(dbURL))
+		}
+
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows iteration error: %w", err)
+		}
+
+		return urls, nil
+	}
+
+	rows, err := tx.QueryContext(ctx,
 		"SELECT id, short_key, original_url, user_id, created_at FROM urls ORDER BY created_at DESC LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
@@ -313,10 +446,20 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 
 func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	var dbURL dto.ShortenedLinkDB
-	err := p.db.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
-		originalURL,
-	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
+
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		err = p.db.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			originalURL,
+		).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			originalURL,
+		).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -333,7 +476,35 @@ func (p *PostgresStorage) ShortenedLinkBatchExists(ctx context.Context, original
 		return nil, models.ErrInvalidData
 	}
 
-	rows, err := p.db.QueryContext(ctx,
+	// Используем транзакцию из контекста
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil {
+		rows, err := p.db.QueryContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = ANY($1)",
+			originalURLs,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query existing URLs: %w", err)
+		}
+		defer rows.Close()
+
+		var result []models.ShortenedLink
+		for rows.Next() {
+			var dbURL dto.ShortenedLinkDB
+			if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt); err != nil {
+				return nil, fmt.Errorf("failed to scan URL row: %w", err)
+			}
+			result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
+		}
+
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows iteration error: %w", err)
+		}
+
+		return result, nil
+	}
+
+	rows, err := tx.QueryContext(ctx,
 		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = ANY($1)",
 		originalURLs,
 	)
