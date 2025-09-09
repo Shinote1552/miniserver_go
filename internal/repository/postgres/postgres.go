@@ -55,7 +55,6 @@ func initConnectionPools(db *sql.DB) {
 	db.SetConnMaxLifetime(storageConnectionsLifetime)
 }
 
-// WithinTx делегирует управление транзакциями TxManager
 func (p *PostgresStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	return p.txm.WithinTx(ctx, fn)
 }
@@ -63,26 +62,25 @@ func (p *PostgresStorage) WithinTx(ctx context.Context, fn func(ctx context.Cont
 func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
 	userDB := dto.UserDBFromDomain(user)
 
-	// Используем транзакцию из контекста
 	tx, err := txmanager.GetTx(ctx)
 	if err != nil {
+		if !errors.Is(err, txmanager.ErrNoTransaction) {
+			return models.User{}, fmt.Errorf("failed to get transaction: %w", err)
+		}
 		err = p.db.QueryRowContext(ctx,
-			`INSERT INTO users(created_at)
-			VALUES ($1)
-			RETURNING id`, userDB.CreatedAt).Scan(&userDB.ID)
+			`INSERT INTO users(created_at) VALUES ($1) RETURNING id`,
+			userDB.CreatedAt).Scan(&userDB.ID)
 	} else {
 		err = tx.QueryRowContext(ctx,
-			`INSERT INTO users(created_at)
-			VALUES ($1)
-			RETURNING id`, userDB.CreatedAt).Scan(&userDB.ID)
+			`INSERT INTO users(created_at) VALUES ($1) RETURNING id`,
+			userDB.CreatedAt).Scan(&userDB.ID)
 	}
 
 	if err != nil {
 		return models.User{}, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	resultUser := dto.UserDBToDomain(userDB)
-	return resultUser, nil
+	return dto.UserDBToDomain(userDB), nil
 }
 
 func (p *PostgresStorage) UserGetByID(ctx context.Context, id int64) (models.User, error) {
@@ -284,20 +282,21 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 }
 
 func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
+	var result []models.ShortenedLink
+
 	if _, err := txmanager.GetTx(ctx); err != nil {
-		var result []models.ShortenedLink
 		err := p.WithinTx(ctx, func(txCtx context.Context) error {
 			var innerErr error
-			result, innerErr = p.shortenedLinkBatchCreateWithinTx(txCtx, urls)
+			result, innerErr = p.createBatchInTx(txCtx, urls)
 			return innerErr
 		})
 		return result, err
 	}
 
-	return p.shortenedLinkBatchCreateWithinTx(ctx, urls)
+	return p.createBatchInTx(ctx, urls)
 }
 
-func (p *PostgresStorage) shortenedLinkBatchCreateWithinTx(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
+func (p *PostgresStorage) createBatchInTx(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
 	tx, err := txmanager.GetTx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("no transaction in context")
@@ -313,23 +312,31 @@ func (p *PostgresStorage) shortenedLinkBatchCreateWithinTx(ctx context.Context, 
 		err := tx.QueryRowContext(ctx, `
 			INSERT INTO urls (short_key, original_url, user_id, created_at)
 			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (original_url) DO UPDATE SET
-				short_key = urls.short_key
+			ON CONFLICT (original_url) DO NOTHING
 			RETURNING id, short_key, original_url, user_id, created_at`,
 			url.ShortCode, url.OriginalURL, url.UserID, url.CreatedAt,
 		).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
 
+		if errors.Is(err, sql.ErrNoRows) {
+			existing, err := p.getByOriginalURLInTx(ctx, url.OriginalURL)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, existing)
+			continue
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert URL: %w", err)
 		}
+
 		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
 	}
 
 	return result, nil
 }
 
-// Вспомогательный метод для получения URL в рамках транзакции
-func (p *PostgresStorage) shortenedLinkGetByOriginalURLWithinTx(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
+func (p *PostgresStorage) getByOriginalURLInTx(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	tx, err := txmanager.GetTx(ctx)
 	if err != nil {
 		return models.ShortenedLink{}, fmt.Errorf("no transaction in context")

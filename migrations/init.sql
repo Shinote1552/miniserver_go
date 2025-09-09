@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS urls (
 CREATE INDEX IF NOT EXISTS idx_urls_user_id ON urls(user_id);
 CREATE INDEX IF NOT EXISTS idx_urls_short_key ON urls(short_key);
 CREATE INDEX IF NOT EXISTS idx_urls_original_url ON urls(original_url);
+CREATE INDEX IF NOT EXISTS idx_urls_created_at ON urls(created_at DESC);
