@@ -6,12 +6,12 @@ import (
 
 	"context"
 	"fmt"
-	"urlshortener/internal/domain/mocks"
 	"urlshortener/internal/domain/models"
+	"urlshortener/internal/mocks"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestURLShortener_GetURL(t *testing.T) {

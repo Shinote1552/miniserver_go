@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 	models "urlshortener/internal/domain/models"
 
-	gomock "github.com/golang/mock/gomock"
+	gomock "go.uber.org/mock/gomock"
 )
 
 // MockURLStorage is a mock of URLStorage interface.

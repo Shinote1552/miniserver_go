@@ -8,14 +8,14 @@ import (
 	"syscall"
 	"time"
 
-	"urlshortener/domain/services/auth"
-	"urlshortener/domain/services/url_shortener"
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/server"
 	"urlshortener/internal/logger"
 	"urlshortener/internal/repository/filestore"
 	"urlshortener/internal/repository/inmemory"
 	"urlshortener/internal/repository/postgres"
+	"urlshortener/internal/services/auth"
+	"urlshortener/internal/services/url_shortener"
 
 	"github.com/rs/zerolog"
 )
