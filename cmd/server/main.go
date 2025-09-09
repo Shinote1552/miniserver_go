@@ -216,7 +216,6 @@ func initPostgresData(ctx context.Context, log *zerolog.Logger, storage *postgre
 		return
 	}
 
-	// Выводим сообщение только если файл не был пустым
 	if !isEmpty {
 		log.
 			Info().

@@ -415,7 +415,7 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 		mockSetup   func()
 		wantLinks   []models.ShortenedLink
 		wantErr     bool
-		expectedErr error
+		expectedErr string
 	}{
 		{
 			name:   "Успешное получение ссылок пользователя",
@@ -444,13 +444,11 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 			wantLinks: []models.ShortenedLink{},
 		},
 		{
-			name:   "Невалидный userID",
-			userID: 0,
-			mockSetup: func() {
-				// Нет вызовов к хранилищу
-			},
+			name:        "Невалидный userID",
+			userID:      0,
+			mockSetup:   func() {},
 			wantErr:     true,
-			expectedErr: fmt.Errorf("failed to validate userID"),
+			expectedErr: "invalid user ID",
 		},
 		{
 			name:   "Ошибка хранилища",
@@ -461,7 +459,7 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 					Return(nil, models.ErrEmpty)
 			},
 			wantErr:     true,
-			expectedErr: fmt.Errorf("failed to get links"),
+			expectedErr: "failed to get user links",
 		},
 	}
 
@@ -475,8 +473,8 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				if tt.expectedErr != nil {
-					assert.Contains(t, err.Error(), tt.expectedErr.Error())
+				if tt.expectedErr != "" {
+					assert.Contains(t, err.Error(), tt.expectedErr)
 				}
 				return
 			}

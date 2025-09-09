@@ -4,6 +4,7 @@ run:
 	docker compose up
 
 build:
+	docker compose build --pull
 	docker compose up --build
 
 test:
@@ -13,12 +14,31 @@ cover: test
 	@go tool cover -func=coverage.out
 
 clean:
+	docker compose down
 	@rm -rf coverage.out tmp short_url.txt request cookies.txt
+	docker rm -f test-app 2>/dev/null || true
+
+
+
+
+
+
+
 
 clean-all:
-	docker compose down --volumes --rmi all
+	docker compose down --volumes --rmi local
+	docker pull postgres:15.5-bookworm
 
 
+run-inmemory: 
+	docker rm -f test-app 2>/dev/null || true
+	docker run -p 8080:8080 --name test-app \
+		-e STORAGE_TYPE=memory \
+		-e FILE_STORAGE_PATH=/app/tmp/short-url-db.json \
+		-e DATABASE_DSN="" \
+		-e SERVER_ADDRESS=:8080 \
+		-e BASE_URL=http://localhost:8080 \
+		urlshortener-service
 
 
 # EXPERIMENTAL!!!
@@ -119,23 +139,6 @@ test_curl: test_ping
 	
 	@echo "=== All tests completed ==="
 
-# Подробные тесты с выводом заголовков
-test_curl_verbose:
-	@echo "=== Verbose curl tests ==="
-	@echo "Testing /ping with verbose output:"
-	@curl -v -X GET http://localhost:8080/ping 2>&1 | grep -E "(HTTP/|< HTTP|> GET)" || true
-	@echo ""
-	
-	@echo "Testing batch create with verbose output:"
-	@curl -v -X POST \
-		-H "Content-Type: application/json" \
-		-H "Cookie: auth_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTc0MzI4MjAsImlhdCI6MTc1NzQzMTkyMCwiVXNlcklEIjoxfQ.39o8PRoB-OALTSKc-F3WGO-MOkVCjkP8iL6DMZ2Lo0Y" \
-		-d '[{"correlation_id": "test1", "original_url": "https://example.com"}]' \
-		http://localhost:8080/api/shorten/batch 2>&1 | grep -E "(HTTP/|< HTTP|> POST)" || true
-	@echo "=== Verbose tests completed ==="
-
-
-
 test_ping:
 	@echo "=== Simple curl tests ==="
 	@echo "Testing /ping endpoint:"
@@ -152,6 +155,20 @@ test_ping:
 
 
 
-
-
 # EXPERIMENTAL!!!
+
+
+# # Основные команды
+# make run          # Запуск сервисов
+# make build        # Пересборка и запуск
+# make test         # Запуск тестов Go
+# make cover        # Покрытие кода тестами
+
+# # Очистка
+# make clean        # Остановка контейнеров
+# make clean-all    # Полная очистка
+
+# # Тестирование
+# make test-ping    # Быстрая проверка работы
+# make test-curl    # Полное тестирование API
+# make test-verbose # Подробное тестирование
