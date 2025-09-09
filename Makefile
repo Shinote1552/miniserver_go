@@ -1,176 +1,157 @@
+.PHONY: run test cover 
 
-# PostgreSQL configuration
-POSTGRES_IMAGE := postgres:bookworm
-POSTGRES_CONTAINER := urlshortener-db
-POSTGRES_DB := gpx_test
-POSTGRES_USER := postgres
-POSTGRES_PASSWORD := admin
-POSTGRES_PORT := 5432
-POSTGRES_DSN := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
-
-# Migration configuration
-MIGRATIONS_DIR := migrations
-
-# Apply migrations manually
-db-migrate:
-	@echo "Applying migrations..."
-	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < $(MIGRATIONS_DIR)/init.sql
-	@echo "Migrations applied successfully"
-
-# Start existing container
-db-up:
-	@echo "Starting existing PostgreSQL container..."
-	@docker start $(POSTGRES_CONTAINER) || (echo "Container not found. Use 'make db-new'"; exit 1)
-	@sleep 2
-	@echo "PostgreSQL running on port $(POSTGRES_PORT)"
-
-# Create new container WITHOUT volume mount
-db-new:
-	@echo "Creating new PostgreSQL container..."
-	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
-	@docker run -d \
-		--name $(POSTGRES_CONTAINER) \
-		-e POSTGRES_USER=$(POSTGRES_USER) \
-		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
-		-e POSTGRES_DB=$(POSTGRES_DB) \
-		-p $(POSTGRES_PORT):5432 \
-		$(POSTGRES_IMAGE)
-	@echo "New container created and running on port $(POSTGRES_PORT)"
-	@sleep 5  # Ждем запуска PostgreSQL
-	@make db-migrate  # Применяем миграции
-
-# Stop container
-db-down:
-	@echo "Stopping PostgreSQL container..."
-	@docker stop $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
-	@echo "Container stopped"
-
-# Start server
 run:
-	@echo "Starting server..."
-	@DATABASE_DSN="$(POSTGRES_DSN)" \
-	go run cmd/server/main.go
+	docker compose up
 
-# Combined command: DB + server
-up: db-new run
+build:
+	docker compose up --build
 
-# Test with database
-test-db: db-new
-	@echo "Running tests with database..."
-	@DATABASE_DSN="$(POSTGRES_DSN)" go test ./... -v
-	@make db-down
+test:
+	@go test -coverprofile=coverage.out ./...
 
-# Cleanup
-clean: db-down
-	@echo "Removing container..."
-	@docker rm -f $(POSTGRES_CONTAINER) >/dev/null 2>&1 || true
-	@rm -rf tmp
-	@echo "Cleanup complete"
+cover: test
+	@go tool cover -func=coverage.out
 
-lines:
-	@echo "Summary code lines in this project: "
-	@find ./ -type f -exec cat {} + | wc -l
+clean:
+	@rm -rf coverage.out tmp short_url.txt request cookies.txt
 
-
-
+clean-all:
+	docker compose down --volumes --rmi all
 
 
 
 
 # EXPERIMENTAL!!!
-SERVER_ADDRESS := localhost:8080
-COOKIE_FILE := /tmp/curl_cookie.txt
-SHORT_URL_FILE := /tmp/short_url.txt
 
-.PHONY: test_curl
-test_curl:
-	echo "=== Starting curl tests ==="
+test_curl: test_ping
+	@echo "=== Starting comprehensive curl tests ==="
 	
 	# 1. Получаем JWT токен и сохраняем cookie
-	rm -f $(COOKIE_FILE) $(SHORT_URL_FILE)
-	curl -v -X POST http://$(SERVER_ADDRESS)/ -c $(COOKIE_FILE)
+	@rm -f cookies.txt short_url.txt
+	@echo "1. Getting JWT token:"
+	@curl -s -X POST http://localhost:8080/ -c cookies.txt
+	@echo "Token saved to cookies.txt"
+	@echo ""
 	
 	# 2. Тестируем публичные endpoint'ы
-	echo "=== Testing public endpoints ==="
-	echo "GET /ping"
-	curl -v -X GET http://$(SERVER_ADDRESS)/ping
-	echo ""
+	@echo "2. Testing public endpoints:"
+	@echo "GET /ping:"
+	@curl -s -o /dev/null -w "Status: %{http_code}\n" -X GET http://localhost:8080/ping
+	@echo ""
 	
-	echo "GET / (default handler)"
-	curl -v -X GET http://$(SERVER_ADDRESS)/
-	echo ""
+	@echo "GET / (default handler):"
+	@curl -s -o /dev/null -w "Status: %{http_code}\n" -X GET http://localhost:8080/
+	@echo ""
 	
 	# 3. Тестируем защищённые endpoint'ы
-	echo "=== Testing protected endpoints ==="
+	@echo "3. Testing protected endpoints:"
 	
-	# 3.1. Создаём URL через text/plain
-	echo "POST / (text/plain)"
-	curl -v -X POST \
+	@echo "3.1. POST / (text/plain):"
+	@curl -s -X POST \
 		-H "Content-Type: text/plain" \
-		-b $(COOKIE_FILE) \
+		-b cookies.txt \
 		-d "https://google.com" \
-		http://$(SERVER_ADDRESS)/ \
-		| tee $(SHORT_URL_FILE)
-	echo ""
+		http://localhost:8080/ \
+		| tee short_url.txt
+	@echo ""
 	
-	# 3.2. Создаём URL через application/json
-	echo "POST /api/shorten (application/json)"
-	curl -v -X POST \
+	@echo "3.2. POST /api/shorten (application/json):"
+	@curl -s -X POST \
 		-H "Content-Type: application/json" \
-		-b $(COOKIE_FILE) \
+		-b cookies.txt \
 		-d '{"url":"https://yandex.ru"}' \
-		http://$(SERVER_ADDRESS)/api/shorten
-	echo ""
+		http://localhost:8080/api/shorten | python3 -m json.tool
+	@echo ""
 	
-	# 3.3. Пакетное создание URL
-	echo "POST /api/shorten/batch (batch create)"
-	curl -v -X POST \
+	@echo "3.3. POST /api/shorten/batch (batch create):"
+	@curl -s -X POST \
 		-H "Content-Type: application/json" \
-		-b $(COOKIE_FILE) \
+		-b cookies.txt \
 		-d '[{"correlation_id": "1", "original_url": "https://google.com"}, {"correlation_id": "2", "original_url": "https://youtube.com"}]' \
-		http://$(SERVER_ADDRESS)/api/shorten/batch
-	echo ""
+		http://localhost:8080/api/shorten/batch | python3 -m json.tool
+	@echo ""
 	
-	# 3.4. Получаем список URL пользователя
-	echo "GET /api/user/urls"
-	curl -v -X GET \
-		-b $(COOKIE_FILE) \
-		http://$(SERVER_ADDRESS)/api/user/urls
-	echo ""
+	@echo "3.4. GET /api/user/urls:"
+	@curl -s -X GET \
+		-b cookies.txt \
+		http://localhost:8080/api/user/urls | python3 -m json.tool
+	@echo ""
 	
-	# 4. Тестируем редирект
-	echo "=== Testing redirect ==="
-	echo "Testing redirect for: $$(cat $(SHORT_URL_FILE))"
-	curl -v -X GET $$(cat $(SHORT_URL_FILE))
-	echo ""
+	# 4. Тестируем редирект (ИСПРАВЛЕННЫЙ ВАРИАНТ)
+	@echo "4. Testing redirect:"
+	@if [ -f short_url.txt ]; then \
+		SHORT_URL=$$(cat short_url.txt); \
+		echo "Testing redirect for: $${SHORT_URL}"; \
+		SHORT_ID=$${SHORT_URL##*:8080/}; \
+		if [ "$${SHORT_ID}" != "$${SHORT_URL}" ]; then \
+			echo "Redirect test for ID: $${SHORT_ID}"; \
+			curl -s -o /dev/null -w "Redirect: %{http_code} -> %{redirect_url}\n" -X GET "http://localhost:8080/$${SHORT_ID}"; \
+		else \
+			echo "Invalid short URL format: $${SHORT_URL}"; \
+		fi; \
+	else \
+		echo "No short URL found for redirect test"; \
+	fi
+	@echo ""
+	
+	# 5. Большое пакетное создание URL
+	@echo "5. Large batch URL creation:"
+	@curl -s -X POST \
+		-H "Content-Type: application/json" \
+		-b cookies.txt \
+		-d '[ \
+			{"correlation_id": "1", "original_url": "https://google.com12313"}, \
+			{"correlation_id": "2", "original_url": "https://youtube.com123123qdas"}, \
+			{"correlation_id": "3", "original_url": "https://github.comasdasdsda"}, \
+			{"correlation_id": "4", "original_url": "https://stackoverflow.comasdasda"}, \
+			{"correlation_id": "5", "original_url": "https://reddit.comasdasdas"}, \
+			{"correlation_id": "6", "original_url": "https://twitter.com123132d1d"}, \
+			{"correlation_id": "7", "original_url": "https://linkedin.comasd21d"}, \
+			{"correlation_id": "8", "original_url": "https://amazon.comasddd21"}, \
+			{"correlation_id": "9", "original_url": "https://netflix.comasd23232d"}, \
+			{"correlation_id": "10", "original_url": "https://microsoft.comasd321d"} \
+		]' \
+		http://localhost:8080/api/shorten/batch | python3 -m json.tool
+	@echo ""
 	
 	# Очищаем временные файлы
-	rm -f $(COOKIE_FILE) $(SHORT_URL_FILE)
+	@rm -f cookies.txt short_url.txt request cookies.txt
 	
-	echo "=== All tests completed ==="
+	@echo "=== All tests completed ==="
+
+# Подробные тесты с выводом заголовков
+test_curl_verbose:
+	@echo "=== Verbose curl tests ==="
+	@echo "Testing /ping with verbose output:"
+	@curl -v -X GET http://localhost:8080/ping 2>&1 | grep -E "(HTTP/|< HTTP|> GET)" || true
+	@echo ""
+	
+	@echo "Testing batch create with verbose output:"
+	@curl -v -X POST \
+		-H "Content-Type: application/json" \
+		-H "Cookie: auth_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTc0MzI4MjAsImlhdCI6MTc1NzQzMTkyMCwiVXNlcklEIjoxfQ.39o8PRoB-OALTSKc-F3WGO-MOkVCjkP8iL6DMZ2Lo0Y" \
+		-d '[{"correlation_id": "test1", "original_url": "https://example.com"}]' \
+		http://localhost:8080/api/shorten/batch 2>&1 | grep -E "(HTTP/|< HTTP|> POST)" || true
+	@echo "=== Verbose tests completed ==="
+
+
+
+test_ping:
+	@echo "=== Simple curl tests ==="
+	@echo "Testing /ping endpoint:"
+	@curl -s -o /dev/null -w "Status: %{http_code}\n" http://localhost:8080/ping
+	
+	@echo ""
+	@echo "Testing batch URL creation:"
+	@curl -s -X POST \
+		-H "Content-Type: application/json" \
+		-H "Cookie: auth_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTc0MzI4MjAsImlhdCI6MTc1NzQzMTkyMCwiVXNlcklEIjoxfQ.39o8PRoB-OALTSKc-F3WGO-MOkVCjkP8iL6DMZ2Lo0Y" \
+		-d '[{"correlation_id": "1", "original_url": "https://example.com"}]' \
+		http://localhost:8080/api/shorten/batch | python3 -m json.tool 2>/dev/null || echo "Test completed"
+	@echo "=== Simple tests completed ==="
+
+
+
+
+
 # EXPERIMENTAL!!!
-
-
-
-
-
-# in server psql -h localhost -p 5432 -U postgres -d gpx_test
-
-# Usage examples:
-# make db-new  # Create new container (old one will be removed)
-# make db-up   # Start existing container
-# make run     # Start server only
-# make up      # Full startup (DB + server)
-# make clean   # Stop and remove container
-
-
-
-
-# FAST TEST
-# # Сохраняем куку при первом запросе
-# curl -v -c cookies.txt -X POST http://localhost:8080/api/shorten -d '{"url":"https://example.com"}'
-
-# # Используем для всех последующих запросов
-# curl -v -b cookies.txt -X POST http://localhost:8080/api/shorten -d '{"url":"https://another.com"}'
-# curl -v -b cookies.txt -X POST http://localhost:8080/api/shorten/batch -d '[{"url":"https://google.com"}]'
-# curl -v -b cookies.txt -X GET http://localhost:8080/api/user/urls

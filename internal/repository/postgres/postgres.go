@@ -123,29 +123,37 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 		return nil, models.ErrInvalidData
 	}
 
-	var rows *sql.Rows
-	var err error
-
-	tx, txErr := txmanager.GetTx(ctx)
-	if txErr != nil {
-		rows, err = p.db.QueryContext(ctx,
+	tx, err := txmanager.GetTx(ctx)
+	if err != nil || tx == nil {
+		// Используем обычное соединение если транзакции нет или ошибка
+		rows, err := p.db.QueryContext(ctx,
 			`SELECT id, short_key, original_url, user_id, created_at 
-			FROM urls 
-			WHERE user_id = $1 
-			ORDER BY created_at`, id)
-	} else {
-		rows, err = tx.QueryContext(ctx,
-			`SELECT id, short_key, original_url, user_id, created_at 
-			FROM urls 
-			WHERE user_id = $1 
-			ORDER BY created_at`, id)
+             FROM urls 
+             WHERE user_id = $1 
+             ORDER BY created_at`, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query user links: %w", err)
+		}
+		defer rows.Close()
+		return p.scanShortLinks(ctx, rows)
 	}
 
+	// Используем транзакцию
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, short_key, original_url, user_id, created_at 
+         FROM urls 
+         WHERE user_id = $1 
+         ORDER BY created_at`, id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query user links: %w", err)
+		return nil, fmt.Errorf("failed to query user links in transaction: %w", err)
 	}
 	defer rows.Close()
 
+	return p.scanShortLinks(ctx, rows)
+}
+
+// Выносим сканирование в отдельный метод
+func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([]models.ShortenedLink, error) {
 	var shortLinks []models.ShortenedLink
 
 	for rows.Next() {

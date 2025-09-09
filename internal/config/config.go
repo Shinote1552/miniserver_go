@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -85,7 +84,7 @@ func NewConfig() *Config {
 	// Final setup
 	cfg.validateJWTSecret()
 	cfg.FileStoragePath = cfg.resolveFilePath()
-	cfg.normalizeServerAddress()
+	// cfg.normalizeServerAddress()
 
 	return cfg
 }
@@ -133,8 +132,8 @@ func (c *Config) resolveFilePath() string {
 	return absPath
 }
 
-func (c *Config) normalizeServerAddress() {
-	if strings.HasPrefix(c.ServerAddress, ":") {
-		c.ServerAddress = "localhost" + c.ServerAddress
-	}
-}
+// func (c *Config) normalizeServerAddress() {
+// 	if strings.HasPrefix(c.ServerAddress, ":") {
+// 		c.ServerAddress = "localhost" + c.ServerAddress
+// 	}
+// }

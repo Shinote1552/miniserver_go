@@ -33,19 +33,16 @@ type URLShortener struct {
 }
 
 func (s *URLShortener) GetUserLinks(ctx context.Context, userID int64) ([]models.ShortenedLink, error) {
-
 	if userID <= 0 {
-
-		return nil, fmt.Errorf("failed to validate userID: %d", userID)
+		return nil, fmt.Errorf("invalid user ID: %d", userID)
 	}
 
 	userLinks, err := s.storage.ShortenedLinkGetBatchByUser(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get links: %w, userID: %d", err, userID)
+		return nil, fmt.Errorf("failed to get user links: %w", err)
 	}
 
 	return userLinks, nil
-
 }
 
 // NewServiceURLShortener создает новый экземпляр сервиса

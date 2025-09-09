@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"urlshortener/internal/domain/models"
 
@@ -229,8 +230,8 @@ func (fs *FileStore) storeURL(ctx context.Context, url *models.ShortenedLink, st
 		return nil
 	}
 
-	if errors.Is(err, ErrConflict) {
-		fs.log.Info().Str("short_url", url.ShortCode).Msg("Skipping duplicate URL")
+	if errors.Is(err, ErrConflict) || strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+		fs.log.Debug().Str("short_url", url.ShortCode).Msg("Skipping duplicate URL during restoration")
 		return nil
 	}
 

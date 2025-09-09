@@ -1,38 +1,33 @@
-ARG GO_VERSION=1.23
-FROM golang:${GO_VERSION} AS build
-WORKDIR /src
+FROM golang:1.23.0-alpine3.19 AS builder
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,source=go.sum,target=go.sum \
-    --mount=type=bind,source=go.mod,target=go.mod \
-    go mod download -x
+WORKDIR /app
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,target=. \
-    CGO_ENABLED=0 go build -o /bin/server ./cmd/server
+COPY go.mod go.sum ./
+RUN go mod download
 
-FROM alpine:latest AS final
+COPY . .
 
-RUN --mount=type=cache,target=/var/cache/apk \
-    apk --update add \
-    ca-certificates \
-    tzdata \
-    && \
-    update-ca-certificates
+RUN CGO_ENABLED=0 GOOS=linux go build -o urlshortener ./cmd/server
 
-ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/nonexistent" \
-    --shell "/sbin/nologin" \
-    --no-create-home \
-    --uid "${UID}" \
-    appuser
+FROM alpine:3.19.1
+
+WORKDIR /app
+
+RUN apk add --no-cache ca-certificates tzdata
+
+RUN mkdir -p /app/tmp /data && \
+    chmod 755 /app && \
+    chmod 755 /app/tmp && \
+    chmod 755 /data
+
+COPY --from=builder /app/urlshortener .
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+RUN chown -R appuser:appgroup /app/tmp /data
+
 USER appuser
-
-COPY --from=build /bin/server /bin/
 
 EXPOSE 8080
 
-ENTRYPOINT [ "/bin/server" ]
+CMD ["./urlshortener"]
