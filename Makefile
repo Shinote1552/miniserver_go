@@ -8,6 +8,9 @@ POSTGRES_USER := postgres
 POSTGRES_PASSWORD := admin
 POSTGRES_PORT := 5432
 
+# Migration configuration
+MIGRATIONS_DIR := migrations
+
 
 # go generate (если настроены //go:generate комментарии)
 mockgen:
@@ -15,11 +18,18 @@ mockgen:
 	@go generate ./...
 	@echo "Generation complete"
 
+# Apply migrations
+db-migrate:
+	@echo "Applying migrations..."
+	@docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < $(MIGRATIONS_DIR)/init.sql
+	@echo "Migrations applied successfully"
+
 
 # Start existing container
 db-up:
 	@echo "Starting existing PostgreSQL container..."
 	@docker start $(POSTGRES_CONTAINER) || (echo "Container not found. Use 'make db-new'"; exit 1)
+	@sleep 2  # Wait for container to start
 	@echo "PostgreSQL running on port $(POSTGRES_PORT)"
 
 # Create new container (with automatic removal of old one)
@@ -31,10 +41,12 @@ db-new:
 		-e POSTGRES_USER=$(POSTGRES_USER) \
 		-e POSTGRES_PASSWORD=$(POSTGRES_PASSWORD) \
 		-e POSTGRES_DB=$(POSTGRES_DB) \
-		-p $(POSTGRES_PORT):$(POSTGRES_PORT) \
+		-p $(POSTGRES_PORT):5432 \
+		-v $(PWD)/$(MIGRATIONS_DIR):/docker-entrypoint-initdb.d \
 		$(POSTGRES_IMAGE)
 	@echo "New container created and running on port $(POSTGRES_PORT)"
-	@sleep 2  # Allow time for initialization
+	@sleep 5  # Allow time for initialization and migration execution
+
 
 # Stop container
 db-down:
@@ -51,12 +63,17 @@ build:
 # Start server
 run:
 	@echo "Starting server..."
-	@DATABASE_DSN="postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable" \
+	@DATABASE_DSN="$(POSTGRES_DSN)" \
 	go run cmd/server/main.go
 
 # Combined command: DB + server
 up: db-new run
 
+# Test with database
+test-db: db-new
+	@echo "Running tests with database..."
+	@DATABASE_DSN="$(POSTGRES_DSN)" go test ./... -v
+	@make db-down
 
 
 cover: 

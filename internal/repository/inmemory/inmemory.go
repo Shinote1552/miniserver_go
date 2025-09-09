@@ -362,5 +362,7 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 }
 
 func (m *InmemoryStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
-	return nil
+	// Для inmemory просто вызываем функцию без транзакций
+	// так как все операции и так атомарны благодаря мьютексу
+	return fn(ctx)
 }

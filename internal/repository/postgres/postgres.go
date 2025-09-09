@@ -20,10 +20,6 @@ const (
 	storagePingTimeout            = 5 * time.Second
 )
 
-const (
-	pgErrCodeUniqueViolation = "23505"
-)
-
 type PostgresStorage struct {
 	db *sql.DB
 }
@@ -55,7 +51,6 @@ func initConnectionPools(db *sql.DB) {
 }
 
 func (p *PostgresStorage) UserCreate(ctx context.Context, user models.User) (models.User, error) {
-
 	userDB := dto.UserDBFromDomain(user)
 
 	err := p.db.QueryRowContext(ctx,
@@ -103,25 +98,17 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 		return nil, models.ErrInvalidData
 	}
 
-	user := dto.UserDBFromDomain(models.User{
-		ID:        id,
-		CreatedAt: time.Now().UTC(),
-	})
-
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, short_key, original_url, user_id, created_at 
 		FROM urls 
-		WHERE user_id = $1`, user.ID)
+		WHERE user_id = $1 
+		ORDER BY created_at`, id)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user links: %w", err)
 	}
-
 	defer rows.Close()
-	/*
-	   надо ли range перекопировать dto->domen еще раз чтобы внутри цикла
-	   были чистые рачсты на dto или как у меня сразу же append в слайс доменной модели?
-	*/
+
 	var shortLinks []models.ShortenedLink
 
 	for rows.Next() {
@@ -136,7 +123,6 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 			return nil, fmt.Errorf("failed to scan link: %w", err)
 		}
 		shortLinks = append(shortLinks, dto.ShortenedLinkDBToDomain(linkDB))
-
 	}
 
 	if err := rows.Err(); err != nil {
@@ -150,21 +136,24 @@ func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	if url.ShortCode == "" || url.OriginalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
+
 	dbURL := dto.ShortenedLinkDBFromDomain(url)
 	var result dto.ShortenedLinkDB
+
 	err := p.db.QueryRowContext(ctx, `
-        INSERT INTO urls (short_key, original_url, user_id, created_at)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (original_url) DO NOTHING
-        RETURNING id, short_key, original_url, user_id, created_at`,
+		INSERT INTO urls (short_key, original_url, user_id, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (original_url) DO NOTHING
+		RETURNING id, short_key, original_url, user_id, created_at`,
 		dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
 	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// URL уже существует, возвращаем существующий
 			existing, err := p.ShortenedLinkGetByOriginalURL(ctx, url.OriginalURL)
 			if err != nil {
-				return models.ShortenedLink{}, fmt.Errorf("%w: %v", models.ErrConflict, err)
+				return models.ShortenedLink{}, fmt.Errorf("failed to get existing URL: %w", err)
 			}
 			return existing, models.ErrConflict
 		}
@@ -229,10 +218,10 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	}()
 
 	stmt, err := tx.PrepareContext(ctx, `
-        INSERT INTO urls (short_key, original_url, user_id, created_at)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (original_url) DO NOTHING
-        RETURNING id, short_key, original_url, user_id, created_at`)
+		INSERT INTO urls (short_key, original_url, user_id, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (original_url) DO NOTHING
+		RETURNING id, short_key, original_url, user_id, created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -246,6 +235,7 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 		)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
+				// URL уже существует
 				existing, err := p.ShortenedLinkGetByOriginalURL(ctx, url.OriginalURL)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get existing URL: %w", err)
@@ -297,7 +287,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	}
 
 	rows, err := p.db.QueryContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls LIMIT $1 OFFSET $2 ORDER BY created_at DESC",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls ORDER BY created_at DESC LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
 	if err != nil {
@@ -308,7 +298,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	var urls []models.ShortenedLink
 	for rows.Next() {
 		var dbURL dto.ShortenedLinkDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL: %w", err)
 		}
 		urls = append(urls, dto.ShortenedLinkDBToDomain(dbURL))
@@ -355,10 +345,14 @@ func (p *PostgresStorage) ShortenedLinkBatchExists(ctx context.Context, original
 	var result []models.ShortenedLink
 	for rows.Next() {
 		var dbURL dto.ShortenedLinkDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
 		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 
 	return result, nil
