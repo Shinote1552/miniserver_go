@@ -153,7 +153,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 					ShortenedLinkGetByOriginalURL(gomock.Any(), "http://long.url").
 					Return(models.ShortenedLink{}, models.ErrUnfound)
 
-				// Проверка уникальности токена - возвращаем ошибку "не найден"
+				// Генерация токена - проверка уникальности
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{}, models.ErrUnfound)
@@ -162,7 +162,6 @@ func TestURLShortener_SetURL(t *testing.T) {
 				mockStorage.EXPECT().
 					ShortenedLinkCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
-						// Возвращаем URL с заполненными полями
 						return models.ShortenedLink{
 							OriginalURL: url.OriginalURL,
 							ShortCode:   url.ShortCode,
@@ -243,6 +242,11 @@ func TestURLShortener_SetURL(t *testing.T) {
 				require.Error(t, err)
 				if tt.expectedErr != nil {
 					assert.ErrorIs(t, err, tt.expectedErr)
+				}
+				// Для случая конфликта проверяем, что возвращается существующий URL
+				if tt.expectedErr == models.ErrConflict {
+					assert.NotEmpty(t, got.ShortCode)
+					assert.Equal(t, tt.input.OriginalURL, got.OriginalURL)
 				}
 				return
 			}
