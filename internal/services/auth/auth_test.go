@@ -14,17 +14,6 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-/*
-DECRYPTION
-
-Register(ctx context.Context, user models.User) (models.User, string, time.Time, error)
-ValidateAndGetUser(ctx context.Context, jwtToken string) (models.User, error)
-
-Эти два метода тесно связаны, чтобы работало одно нужно другое тоже.
-Надо ли в таких случаях Обьединить тесты этих двух методов в один?
-Пока что написал с разделением.
-*/
-
 func TestAuth_Register(t *testing.T) {
 	secretKey := base64.StdEncoding.EncodeToString([]byte("test-secret-key-32-bytes-long!!!"))
 	accessExp := 15 * time.Minute
@@ -43,6 +32,12 @@ func TestAuth_Register(t *testing.T) {
 			inputUser: models.User{},
 
 			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				// Ожидаем вызов WithinTx для транзакции
+				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
@@ -65,6 +60,11 @@ func TestAuth_Register(t *testing.T) {
 
 			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
 				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
+				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
 						assert.False(t, u.CreatedAt.IsZero(), "CreatedAt не должно быть нулевым")
@@ -79,6 +79,11 @@ func TestAuth_Register(t *testing.T) {
 			inputUser: models.User{},
 
 			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
@@ -96,6 +101,11 @@ func TestAuth_Register(t *testing.T) {
 			},
 
 			mockSetup: func(m *mocks.MockUserStorage, expected models.User) {
+				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, u models.User) (models.User, error) {
@@ -168,6 +178,11 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 
 			setup: func(m *mocks.MockUserStorage) string {
 				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
+				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					Return(models.User{ID: 1}, nil)
 				m.EXPECT().
@@ -185,6 +200,11 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 			name: "Пользователь не найден",
 
 			setup: func(m *mocks.MockUserStorage) string {
+				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					Return(models.User{ID: 1}, nil)
@@ -213,6 +233,11 @@ func TestAuth_ValidateAndGetUser(t *testing.T) {
 			name: "Просроченный токен",
 
 			setup: func(m *mocks.MockUserStorage) string {
+				m.EXPECT().
+					WithinTx(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
+						return fn(ctx)
+					})
 				m.EXPECT().
 					UserCreate(gomock.Any(), gomock.Any()).
 					Return(models.User{ID: 1}, nil)

@@ -1,11 +1,10 @@
 package url_shortener
 
 import (
-	"testing"
-	"time"
-
 	"context"
 	"fmt"
+	"testing"
+	"time"
 	"urlshortener/internal/domain/models"
 	"urlshortener/internal/mocks"
 
@@ -141,7 +140,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
-				// Первый вызов WithinTx для основной логики
+				// Ожидаем вызов WithinTx для транзакции
 				mockStorage.EXPECT().
 					WithinTx(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
@@ -260,10 +259,6 @@ func TestURLShortener_SetURL(t *testing.T) {
 	}
 }
 
-/*
-AnyTimes() пришлось добавлять потому что ShortenedLinkGetByShortKey много раз
-вызывается при каждой генерации shortCode/shortURL
-*/
 func TestURLShortener_BatchCreate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -296,7 +291,7 @@ func TestURLShortener_BatchCreate(t *testing.T) {
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
 
-				// Создание записей
+				// Создание записей - ожидаем WithinTx для BatchCreate
 				mockStorage.EXPECT().
 					ShortenedLinkBatchCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
