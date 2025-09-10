@@ -184,7 +184,7 @@ func (s *URLShortener) PingDataBase(ctx context.Context) error {
 // }
 
 const (
-	maxAttempts  = 3
+	maxAttempts  = 10
 	tokenLength  = 8
 	tokenLetters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
@@ -193,11 +193,11 @@ func (s *URLShortener) generateUniqueToken(ctx context.Context) (string, error) 
 	for i := 0; i < maxAttempts; i++ {
 		token := generateRandomToken()
 		_, err := s.storage.ShortenedLinkGetByShortKey(ctx, token)
+		if errors.Is(err, models.ErrUnfound) {
+			return token, nil
+		}
 
-		if err != nil {
-			if errors.Is(err, models.ErrUnfound) {
-				return token, nil
-			}
+		if err != nil && !errors.Is(err, models.ErrUnfound) {
 			return "", err
 		}
 	}
