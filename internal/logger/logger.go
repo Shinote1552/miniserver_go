@@ -21,7 +21,7 @@ func NewLogger() *zerolog.Logger {
 func initLogger() zerolog.Logger {
 	output := zerolog.ConsoleWriter{
 		Out:        os.Stdout,
-		TimeFormat: time.RFC3339,
+		TimeFormat: "2006-01-02 15:04:05 MST",
 	}
 
 	// Цвета для разных уровней логирования
@@ -67,11 +67,10 @@ func initLogger() zerolog.Logger {
 	}
 
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	zerolog.CallerSkipFrameCount = 2
+	zerolog.DurationFieldInteger = true
 
 	return zerolog.New(output).
 		With().
 		Timestamp().
-		Caller().
 		Logger()
 }

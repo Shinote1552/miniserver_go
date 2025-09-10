@@ -140,22 +140,10 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
-				// Ожидаем вызов WithinTx для транзакции
-				mockStorage.EXPECT().
-					WithinTx(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
-						return fn(ctx)
-					})
-
-				// Проверка существования URL - возвращаем ошибку "не найден"
-				mockStorage.EXPECT().
-					ShortenedLinkGetByOriginalURL(gomock.Any(), "http://long.url").
-					Return(models.ShortenedLink{}, models.ErrUnfound)
-
-				// Генерация токена - проверка уникальности
+				// Генерация токена - проверка уникальности (может вызываться несколько раз)
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
-					Return(models.ShortenedLink{}, models.ErrUnfound)
+					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
 
 				// Создание записи - возвращаем созданный URL
 				mockStorage.EXPECT().
@@ -163,7 +151,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 					DoAndReturn(func(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
 						return models.ShortenedLink{
 							OriginalURL: url.OriginalURL,
-							ShortCode:   url.ShortCode,
+							ShortCode:   url.ShortCode, // сокращенная ссылка будет сгенерирован в generateUniqueToken
 							UserID:      url.UserID,
 							CreatedAt:   url.CreatedAt,
 						}, nil
@@ -182,23 +170,21 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
-				// WithinTx для основной логики
+				// Генерация токена - проверка уникальности (может вызываться несколько раз)
 				mockStorage.EXPECT().
-					WithinTx(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, fn func(ctx context.Context) error) error {
-						return fn(ctx)
-					})
+					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
+					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
 
-				// Проверка существования URL - возвращаем существующую запись
+				// Попытка создания записи - возвращаем конфликт и существующий URL
 				mockStorage.EXPECT().
-					ShortenedLinkGetByOriginalURL(gomock.Any(), "http://existing.url").
+					ShortenedLinkCreate(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{
 						ID:          1,
 						OriginalURL: "http://existing.url",
 						ShortCode:   "existing",
 						UserID:      1,
 						CreatedAt:   time.Now(),
-					}, nil)
+					}, models.ErrConflict) // Важно: вернуть ошибку!
 			},
 			wantErr:     true,
 			expectedErr: models.ErrConflict,
