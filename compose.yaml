@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Основной сервис с автоматическим переключением
   urlshortener-service:
     build:
       context: .
@@ -14,7 +15,7 @@ services:
       - DATABASE_DSN=postgres://postgres:admin@urlshortener-db:5432/gpx_test?sslmode=disable
       - JWT_SECRET_KEY=YuHiAYxgw4WDdhxduFavo1/202YPUSwbn9AbO0R4dhs=
       - JWT_ACCESS_EXPIRE=15m
-      - FILE_STORAGE_PATH=/data/short-url-db.json 
+      - FILE_STORAGE_PATH=/data/short-url-db.json
     depends_on:
       urlshortener-db:
         condition: service_healthy
@@ -23,6 +24,46 @@ services:
     restart: unless-stopped
     volumes:
       - app_data:/data
+
+  # Сервис с принудительным inmemory (имитация ошибки Postgres)
+  urlshortener-inmemory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: urlshortener-inmemory
+    ports:
+      - "8081:8080"
+    environment:
+      - SERVER_ADDRESS=:8080
+      - BASE_URL=http://localhost:8081
+      - DATABASE_DSN=  # Пустая DSN для принудительного inmemory
+      - JWT_SECRET_KEY=YuHiAYxgw4WDdhxduFavo1/202YPUSwbn9AbO0R4dhs=
+      - JWT_ACCESS_EXPIRE=15m
+      - FILE_STORAGE_PATH=/data/short-url-db.json
+    networks:
+      - urlshortener-network
+    restart: unless-stopped
+    profiles: ["inmemory"]
+
+  # Сервис с неработающей Postgres (для теста fallback)
+  urlshortener-fallback:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: urlshortener-fallback
+    ports:
+      - "8082:8080"
+    environment:
+      - SERVER_ADDRESS=:8080
+      - BASE_URL=http://localhost:8082
+      - DATABASE_DSN=postgres://invalid:password@non-existent-host:5432/nonexistent?sslmode=disable
+      - JWT_SECRET_KEY=YuHiAYxgw4WDdhxduFavo1/202YPUSwbn9AbO0R4dhs=
+      - JWT_ACCESS_EXPIRE=15m
+      - FILE_STORAGE_PATH=/data/short-url-db.json
+    networks:
+      - urlshortener-network
+    restart: unless-stopped
+    profiles: ["fallback"]
 
   urlshortener-db:
     image: postgres:15.5-bookworm
@@ -48,7 +89,7 @@ services:
 
 volumes:
   postgres_data:
-  app_data:  
+  app_data:
 
 networks:
   urlshortener-network:

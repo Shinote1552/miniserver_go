@@ -1,11 +1,17 @@
-.PHONY: run test cover 
+.PHONY: run run-inmemory run-fallback test cover clean clean-all test-curl test-ping test-all
 
+# Основные команды
 run:
 	docker compose up
 
+run-inmemory:
+	docker compose --profile inmemory up urlshortener-inmemory
+
+run-fallback:
+	docker compose --profile fallback up urlshortener-fallback
+
 build:
 	docker compose build --pull
-	docker compose up --build
 
 test:
 	@go test -coverprofile=coverage.out ./...
@@ -15,164 +21,86 @@ cover: test
 
 clean:
 	docker compose down
+	docker compose --profile inmemory down
+	docker compose --profile fallback down
 	@rm -rf coverage.out tmp short_url.txt request cookies.txt
-	docker rm -f test-app 2>/dev/null || true
-
-
-
-
-
-
-
+	docker rm -f test-app urlshortener-inmemory urlshortener-fallback 2>/dev/null || true
 
 clean-all:
 	docker compose down --volumes --rmi local
-	docker pull postgres:15.5-bookworm
+	docker compose --profile inmemory down --volumes --rmi local
+	docker compose --profile fallback down --volumes --rmi local
 
+# Тестовые команды через скрипты
+test-curl:
+	@./scripts/test-api.sh http://localhost:8080
 
-run-inmemory: 
-	docker rm -f test-app 2>/dev/null || true
-	docker run -p 8080:8080 --name test-app \
-		-e STORAGE_TYPE=memory \
-		-e FILE_STORAGE_PATH=/app/tmp/short-url-db.json \
-		-e DATABASE_DSN="" \
-		-e SERVER_ADDRESS=:8080 \
-		-e BASE_URL=http://localhost:8080 \
-		urlshortener-service
+test-curl-inmemory:
+	@./scripts/test-api.sh http://localhost:8081
+
+test-curl-fallback:
+	@./scripts/test-api.sh http://localhost:8082
+
+test-ping:
+	@./scripts/test-ping.sh http://localhost:8080
+
+test-ping-inmemory:
+	@./scripts/test-ping.sh http://localhost:8081
+
+test-ping-fallback:
+	@./scripts/test-ping.sh http://localhost:8082
+
+test-all:
+	@echo "=== Testing Postgres version (8080) ==="
+	@./scripts/test-api.sh http://localhost:8080
+	@echo ""
+	@echo "=== Testing InMemory version (8081) ==="
+	@./scripts/test-api.sh http://localhost:8081
+	@echo ""
+	@echo "=== Testing Fallback version (8082) ==="
+	@./scripts/test-api.sh http://localhost:8082
+
+# Команды для разработки
+dev-postgres: clean
+	docker compose up urlshortener-db urlshortener-service
+
+dev-inmemory: clean
+	docker compose --profile inmemory up urlshortener-inmemory
+
+dev-fallback: clean
+	docker compose --profile fallback up urlshortener-fallback
+
+logs:
+	docker compose logs -f urlshortener-service
+
+logs-inmemory:
+	docker compose --profile inmemory logs -f urlshortener-inmemory
+
+logs-fallback:
+	docker compose --profile fallback logs -f urlshortener-fallback
+
+# Мониторинг
+status:
+	@echo "=== Container Status ==="
+	@docker ps --filter "name=urlshortener" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 lines:
 	@echo "Summary code lines in this project: "
 	@find ./ -type f -exec cat {} + | wc -l
 
+# Создаем скрипты исполняемыми
+setup-scripts:
+	chmod +x scripts/*.sh
 
-# EXPERIMENTAL!!!
-
-test_curl: test_ping
-	@echo "=== Starting comprehensive curl tests ==="
-	
-	# 1. Получаем JWT токен и сохраняем cookie
-	@rm -f cookies.txt short_url.txt
-	@echo "1. Getting JWT token:"
-	@curl -s -X POST http://localhost:8080/ -c cookies.txt
-	@echo "Token saved to cookies.txt"
-	@echo ""
-	
-	# 2. Тестируем публичные endpoint'ы
-	@echo "2. Testing public endpoints:"
-	@echo "GET /ping:"
-	@curl -s -o /dev/null -w "Status: %{http_code}\n" -X GET http://localhost:8080/ping
-	@echo ""
-	
-	@echo "GET / (default handler):"
-	@curl -s -o /dev/null -w "Status: %{http_code}\n" -X GET http://localhost:8080/
-	@echo ""
-	
-	# 3. Тестируем защищённые endpoint'ы
-	@echo "3. Testing protected endpoints:"
-	
-	@echo "3.1. POST / (text/plain):"
-	@curl -s -X POST \
-		-H "Content-Type: text/plain" \
-		-b cookies.txt \
-		-d "https://google.com" \
-		http://localhost:8080/ \
-		| tee short_url.txt
-	@echo ""
-	
-	@echo "3.2. POST /api/shorten (application/json):"
-	@curl -s -X POST \
-		-H "Content-Type: application/json" \
-		-b cookies.txt \
-		-d '{"url":"https://yandex.ru"}' \
-		http://localhost:8080/api/shorten | python3 -m json.tool
-	@echo ""
-	
-	@echo "3.3. POST /api/shorten/batch (batch create):"
-	@curl -s -X POST \
-		-H "Content-Type: application/json" \
-		-b cookies.txt \
-		-d '[{"correlation_id": "1", "original_url": "https://google.com"}, {"correlation_id": "2", "original_url": "https://youtube.com"}]' \
-		http://localhost:8080/api/shorten/batch | python3 -m json.tool
-	@echo ""
-	
-	@echo "3.4. GET /api/user/urls:"
-	@curl -s -X GET \
-		-b cookies.txt \
-		http://localhost:8080/api/user/urls | python3 -m json.tool
-	@echo ""
-	
-	# 4. Тестируем редирект (ИСПРАВЛЕННЫЙ ВАРИАНТ)
-	@echo "4. Testing redirect:"
-	@if [ -f short_url.txt ]; then \
-		SHORT_URL=$$(cat short_url.txt); \
-		echo "Testing redirect for: $${SHORT_URL}"; \
-		SHORT_ID=$${SHORT_URL##*:8080/}; \
-		if [ "$${SHORT_ID}" != "$${SHORT_URL}" ]; then \
-			echo "Redirect test for ID: $${SHORT_ID}"; \
-			curl -s -o /dev/null -w "Redirect: %{http_code} -> %{redirect_url}\n" -X GET "http://localhost:8080/$${SHORT_ID}"; \
-		else \
-			echo "Invalid short URL format: $${SHORT_URL}"; \
-		fi; \
-	else \
-		echo "No short URL found for redirect test"; \
-	fi
-	@echo ""
-	
-	# 5. Большое пакетное создание URL
-	@echo "5. Large batch URL creation:"
-	@curl -s -X POST \
-		-H "Content-Type: application/json" \
-		-b cookies.txt \
-		-d '[ \
-			{"correlation_id": "1", "original_url": "https://google.com12313"}, \
-			{"correlation_id": "2", "original_url": "https://youtube.com123123qdas"}, \
-			{"correlation_id": "3", "original_url": "https://github.comasdasdsda"}, \
-			{"correlation_id": "4", "original_url": "https://stackoverflow.comasdasda"}, \
-			{"correlation_id": "5", "original_url": "https://reddit.comasdasdas"}, \
-			{"correlation_id": "6", "original_url": "https://twitter.com123132d1d"}, \
-			{"correlation_id": "7", "original_url": "https://linkedin.comasd21d"}, \
-			{"correlation_id": "8", "original_url": "https://amazon.comasddd21"}, \
-			{"correlation_id": "9", "original_url": "https://netflix.comasd23232d"}, \
-			{"correlation_id": "10", "original_url": "https://microsoft.comasd321d"} \
-		]' \
-		http://localhost:8080/api/shorten/batch | python3 -m json.tool
-	@echo ""
-	
-	# Очищаем временные файлы
-	@rm -f cookies.txt short_url.txt request cookies.txt
-	
-	@echo "=== All tests completed ==="
-
-test_ping:
-	@echo "=== Simple curl tests ==="
-	@echo "Testing /ping endpoint:"
-	@curl -s -o /dev/null -w "Status: %{http_code}\n" http://localhost:8080/ping
-	
-	@echo ""
-	@echo "Testing batch URL creation:"
-	@curl -s -X POST \
-		-H "Content-Type: application/json" \
-		-H "Cookie: auth_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTc0MzI4MjAsImlhdCI6MTc1NzQzMTkyMCwiVXNlcklEIjoxfQ.39o8PRoB-OALTSKc-F3WGO-MOkVCjkP8iL6DMZ2Lo0Y" \
-		-d '[{"correlation_id": "1", "original_url": "https://example.com"}]' \
-		http://localhost:8080/api/shorten/batch | python3 -m json.tool 2>/dev/null || echo "Test completed"
-	@echo "=== Simple tests completed ==="
-
-
-
-# EXPERIMENTAL!!!
-
-
-# # Основные команды
-# make run          # Запуск сервисов
-# make build        # Пересборка и запуск
-# make test         # Запуск тестов Go
-# make cover        # Покрытие кода тестами
-
-# # Очистка
-# make clean        # Остановка контейнеров
-# make clean-all    # Полная очистка
-
-# # Тестирование
-# make test-ping    # Быстрая проверка работы
-# make test-curl    # Полное тестирование API
-# make test-verbose # Подробное тестирование
+# Помощь
+help:
+	@echo "Available commands:"
+	@echo "  make run              - Запуск с Postgres (8080)"
+	@echo "  make run-inmemory     - Запуск inmemory версии (8081)"
+	@echo "  make run-fallback     - Запуск fallback теста (8082)"
+	@echo "  make test-curl        - Полный тест Postgres версии"
+	@echo "  make test-curl-inmemory - Полный тест inmemory версии"
+	@echo "  make test-all         - Тест всех версий"
+	@echo "  make test-ping        - Быстрый тест ping"
+	@echo "  make dev-postgres     - Только Postgres + сервис"
+	@echo "  make status           - Статус контейнеров"

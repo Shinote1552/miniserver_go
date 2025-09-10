@@ -15,8 +15,8 @@ type InmemoryStorage struct {
 	users map[int64]dto.UserDB
 
 	// Дополнительные индексы(пока что почти такие же как и в Postgres)
-	originalURLIndex map[string]dto.ShortenedLinkDB
-	createdAtIndex   map[time.Time][]string
+	originalURLIndex map[string]string
+	createdAtIndex   map[string][]string
 	userURLsIndex    map[int64][]string
 
 	lastURLID  int64
@@ -27,8 +27,8 @@ func NewStorage() *InmemoryStorage {
 	return &InmemoryStorage{
 		data:             make(map[string]dto.ShortenedLinkDB),
 		users:            make(map[int64]dto.UserDB),
-		originalURLIndex: make(map[string]dto.ShortenedLinkDB),
-		createdAtIndex:   make(map[time.Time][]string),
+		originalURLIndex: make(map[string]string),
+		createdAtIndex:   make(map[string][]string),
 		userURLsIndex:    make(map[int64][]string),
 		lastURLID:        0,
 		lastUserID:       0,
@@ -39,16 +39,12 @@ func (m *InmemoryStorage) Close() error {
 	m.rwmu.Lock()
 	defer m.rwmu.Unlock()
 
-	// Очищаем все основные структуры данных
-	m.data = make(map[string]dto.ShortenedLinkDB)
-	m.users = make(map[int64]dto.UserDB)
+	clear(m.data)
+	clear(m.users)
+	clear(m.originalURLIndex)
+	clear(m.createdAtIndex)
+	clear(m.userURLsIndex)
 
-	// Очищаем все индексы
-	m.originalURLIndex = make(map[string]dto.ShortenedLinkDB)
-	m.createdAtIndex = make(map[time.Time][]string)
-	m.userURLsIndex = make(map[int64][]string)
-
-	// Сбрасываем счетчики
 	m.lastURLID = 0
 	m.lastUserID = 0
 
@@ -68,7 +64,6 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 	m.rwmu.Lock()
 	defer m.rwmu.Unlock()
 
-	// Check for existing URL with same short code (индекс short_key)
 	if existingURL, exists := m.data[url.ShortCode]; exists {
 		if existingURL.OriginalURL == url.OriginalURL {
 			return dto.ShortenedLinkDBToDomain(existingURL), nil
@@ -76,9 +71,10 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 		return models.ShortenedLink{}, models.ErrConflict
 	}
 
-	// Check for existing URL with same long URL (индекс original_url)
-	if existingURL, exists := m.originalURLIndex[url.OriginalURL]; exists {
-		return dto.ShortenedLinkDBToDomain(existingURL), models.ErrConflict
+	if shortCode, exists := m.originalURLIndex[url.OriginalURL]; exists {
+		if existingURL, exists := m.data[shortCode]; exists {
+			return dto.ShortenedLinkDBToDomain(existingURL), models.ErrConflict
+		}
 	}
 
 	m.lastURLID++
@@ -90,13 +86,14 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 
 	// Добавляем во все индексы
 	m.data[urlDB.ShortCode] = urlDB
-	m.originalURLIndex[urlDB.OriginalURL] = urlDB
-	m.createdAtIndex[urlDB.CreatedAt] = append(m.createdAtIndex[urlDB.CreatedAt], urlDB.ShortCode)
+	m.originalURLIndex[urlDB.OriginalURL] = urlDB.ShortCode
+
+	dateKey := urlDB.CreatedAt.Format("2006-01-02")
+	m.createdAtIndex[dateKey] = append(m.createdAtIndex[dateKey], urlDB.ShortCode)
 	m.userURLsIndex[urlDB.UserID] = append(m.userURLsIndex[urlDB.UserID], urlDB.ShortCode)
 
 	return dto.ShortenedLinkDBToDomain(urlDB), nil
 }
-
 func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
@@ -109,7 +106,6 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	m.rwmu.RLock()
 	defer m.rwmu.RUnlock()
 
-	// Используем индекс по short_key
 	url, exists := m.data[shortKey]
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
@@ -129,8 +125,12 @@ func (m *InmemoryStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 	m.rwmu.RLock()
 	defer m.rwmu.RUnlock()
 
-	// Используем индекс по original_url
-	url, exists := m.originalURLIndex[originalURL]
+	shortCode, exists := m.originalURLIndex[originalURL]
+	if !exists {
+		return models.ShortenedLink{}, models.ErrUnfound
+	}
+
+	url, exists := m.data[shortCode]
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
 	}
@@ -151,21 +151,24 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 
 	result := make([]models.ShortenedLink, 0, len(urls))
 	for _, url := range urls {
-		if url.UserID <= 0 {
+		if url.ShortCode == "" || url.OriginalURL == "" || url.UserID <= 0 {
 			return nil, models.ErrInvalidData
 		}
 
-		// Проверяем конфликты через индексы
+		// Проверяем конфликты
 		if existingURL, exists := m.data[url.ShortCode]; exists {
-			if existingURL.OriginalURL == url.OriginalURL {
-				result = append(result, dto.ShortenedLinkDBToDomain(existingURL))
+			if existingURL.OriginalURL != url.OriginalURL {
+				return nil, models.ErrConflict
 			}
+			result = append(result, dto.ShortenedLinkDBToDomain(existingURL))
 			continue
 		}
 
-		if existingURL, exists := m.originalURLIndex[url.OriginalURL]; exists {
-			result = append(result, dto.ShortenedLinkDBToDomain(existingURL))
-			continue
+		if shortCode, exists := m.originalURLIndex[url.OriginalURL]; exists {
+			if existingURL, exists := m.data[shortCode]; exists {
+				result = append(result, dto.ShortenedLinkDBToDomain(existingURL))
+				continue
+			}
 		}
 
 		m.lastURLID++
@@ -177,8 +180,10 @@ func (m *InmemoryStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 
 		// Добавляем во все индексы
 		m.data[urlDB.ShortCode] = urlDB
-		m.originalURLIndex[urlDB.OriginalURL] = urlDB
-		m.createdAtIndex[urlDB.CreatedAt] = append(m.createdAtIndex[urlDB.CreatedAt], urlDB.ShortCode)
+		m.originalURLIndex[urlDB.OriginalURL] = urlDB.ShortCode
+
+		dateKey := urlDB.CreatedAt.Format("2006-01-02")
+		m.createdAtIndex[dateKey] = append(m.createdAtIndex[dateKey], urlDB.ShortCode)
 		m.userURLsIndex[urlDB.UserID] = append(m.userURLsIndex[urlDB.UserID], urlDB.ShortCode)
 
 		result = append(result, dto.ShortenedLinkDBToDomain(urlDB))
@@ -201,9 +206,14 @@ func (m *InmemoryStorage) ShortenedLinkBatchExists(ctx context.Context, original
 
 	result := make([]models.ShortenedLink, 0, len(originalURLs))
 	for _, originalURL := range originalURLs {
-		// Используем индекс по original_url
-		if url, exists := m.originalURLIndex[originalURL]; exists {
-			result = append(result, dto.ShortenedLinkDBToDomain(url))
+		if originalURL == "" {
+			continue
+		}
+
+		if shortCode, exists := m.originalURLIndex[originalURL]; exists {
+			if url, exists := m.data[shortCode]; exists {
+				result = append(result, dto.ShortenedLinkDBToDomain(url))
+			}
 		}
 	}
 
@@ -222,7 +232,6 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 	m.rwmu.RLock()
 	defer m.rwmu.RUnlock()
 
-	// Используем индекс по user_id
 	shortKeys, exists := m.userURLsIndex[userID]
 	if !exists {
 		return []models.ShortenedLink{}, nil
@@ -235,7 +244,7 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 		}
 	}
 
-	// by creation date
+	// Сортируем по дате создания
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
@@ -255,25 +264,21 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 	m.rwmu.RLock()
 	defer m.rwmu.RUnlock()
 
-	// Собираем все URL через индекс created_at
+	// Собираем все URL
 	allURLs := make([]models.ShortenedLink, 0, len(m.data))
-	for _, shortKeys := range m.createdAtIndex {
-		for _, shortKey := range shortKeys {
-			if url, exists := m.data[shortKey]; exists {
-				allURLs = append(allURLs, dto.ShortenedLinkDBToDomain(url))
-			}
-		}
+	for _, url := range m.data {
+		allURLs = append(allURLs, dto.ShortenedLinkDBToDomain(url))
 	}
 
-	// Sort by creation date (newest first)
+	// Сортируем по дате создания (сначала новые)
 	sort.Slice(allURLs, func(i, j int) bool {
 		return allURLs[i].CreatedAt.After(allURLs[j].CreatedAt)
 	})
 
-	// Apply limit and offset
+	// Применяем limit и offset
 	start := offset
 	if start > len(allURLs) {
-		start = len(allURLs)
+		return []models.ShortenedLink{}, nil
 	}
 
 	end := start + limit
@@ -305,20 +310,20 @@ func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
 	delete(m.data, shortKey)
 	delete(m.originalURLIndex, url.OriginalURL)
 
-	// Удаляем из created_at индекса
-	if keys, exists := m.createdAtIndex[url.CreatedAt]; exists {
+	dateKey := url.CreatedAt.Format("2006-01-02")
+	if keys, exists := m.createdAtIndex[dateKey]; exists {
 		for i, key := range keys {
 			if key == shortKey {
-				m.createdAtIndex[url.CreatedAt] = append(keys[:i], keys[i+1:]...)
+				// Простое удаление элемента (меняем порядок, но это ок)
+				m.createdAtIndex[dateKey] = append(keys[:i], keys[i+1:]...)
 				break
 			}
 		}
-		if len(m.createdAtIndex[url.CreatedAt]) == 0 {
-			delete(m.createdAtIndex, url.CreatedAt)
+		if len(m.createdAtIndex[dateKey]) == 0 {
+			delete(m.createdAtIndex, dateKey)
 		}
 	}
 
-	// Удаляем из user_urls индекса
 	if keys, exists := m.userURLsIndex[url.UserID]; exists {
 		for i, key := range keys {
 			if key == shortKey {
@@ -346,12 +351,17 @@ func (m *InmemoryStorage) Exists(ctx context.Context, originalURL string) (model
 	m.rwmu.RLock()
 	defer m.rwmu.RUnlock()
 
-	// Используем индекс по original_url
-	if url, exists := m.originalURLIndex[originalURL]; exists {
-		return dto.ShortenedLinkDBToDomain(url), nil
+	shortCode, exists := m.originalURLIndex[originalURL]
+	if !exists {
+		return models.ShortenedLink{}, models.ErrUnfound
 	}
 
-	return models.ShortenedLink{}, nil
+	url, exists := m.data[shortCode]
+	if !exists {
+		return models.ShortenedLink{}, models.ErrUnfound
+	}
+
+	return dto.ShortenedLinkDBToDomain(url), nil
 }
 
 // UserStorage methods
@@ -401,13 +411,10 @@ func (m *InmemoryStorage) Ping(ctx context.Context) error {
 }
 
 func (m *InmemoryStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error) {
-	// Пока что это заглушка
-	// Для inmemory просто вызываем функцию без транзакций
-	// так как все операции и так атомарны благодаря мьютексу
 	return fn(ctx)
 }
 
-// Временный метод!
+// Временный метод для отладки
 func (m *InmemoryStorage) GetAll(ctx context.Context) ([]models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, models.ErrInvalidData
