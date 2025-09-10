@@ -40,6 +40,10 @@ run-inmemory:
 		-e BASE_URL=http://localhost:8080 \
 		urlshortener-service
 
+lines:
+	@echo "Summary code lines in this project: "
+	@find ./ -type f -exec cat {} + | wc -l
+
 
 # EXPERIMENTAL!!!
 
