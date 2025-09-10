@@ -67,7 +67,7 @@ func (tm *SQLTxManager) WithTx(ctx context.Context, opts *sql.TxOptions, fn func
 }
 
 func (tm *SQLTxManager) GetQuerier(ctx context.Context) (Querier, error) {
-	tx, err := GetTx(ctx)
+	tx, err := tm.getTx(ctx)
 	if err != nil {
 		if errors.Is(err, ErrNoTransaction) {
 			// Возвращаем Querier для основного соединения
@@ -80,7 +80,7 @@ func (tm *SQLTxManager) GetQuerier(ctx context.Context) (Querier, error) {
 }
 
 // GetTx извлекает транзакцию из контекста
-func GetTx(ctx context.Context) (*sql.Tx, error) {
+func (tm *SQLTxManager) getTx(ctx context.Context) (*sql.Tx, error) {
 	tx, ok := ctx.Value(keyTxValue).(*sql.Tx)
 	if !ok {
 		return nil, ErrNoTransaction

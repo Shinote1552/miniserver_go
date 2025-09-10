@@ -14,6 +14,7 @@ import (
 type UserStorage interface {
 	UserCreate(ctx context.Context, user models.User) (models.User, error)
 	UserGetByID(ctx context.Context, id int64) (models.User, error)
+
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 

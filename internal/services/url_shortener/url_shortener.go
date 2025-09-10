@@ -23,7 +23,7 @@ type URLStorage interface {
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
 	Ping(ctx context.Context) error
 
-	WithinTx(ctx context.Context, fn func(ctx context.Context) error) (err error)
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 // URLShortener реализует бизнес-логику сервиса сокращения URL
@@ -85,49 +85,28 @@ func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	var result models.ShortenedLink
-	err := s.storage.WithinTx(ctx, func(ctx context.Context) error {
-		// Проверяем существование URL
-		existingURL, err := s.storage.ShortenedLinkGetByOriginalURL(ctx, model.OriginalURL)
-		if err == nil {
-			// URL уже существует, возвращаем его
-			result = existingURL
-			return models.ErrConflict
-		}
+	// Генерируем уникальный токен
+	token, err := s.generateUniqueToken(ctx)
+	if err != nil {
+		return models.ShortenedLink{}, fmt.Errorf("failed to generate token: %w", err)
+	}
 
-		// Если ошибка не "не найдено", возвращаем её
-		if !errors.Is(err, models.ErrUnfound) {
-			return fmt.Errorf("failed to check existing URL: %w", err)
-		}
+	// Создаем новую запись
+	newURL := models.ShortenedLink{
+		OriginalURL: model.OriginalURL,
+		ShortCode:   token,
+		UserID:      model.UserID,
+		CreatedAt:   time.Now().UTC(),
+	}
 
-		// Генерируем уникальный токен
-		token, err := s.generateUniqueToken(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to generate token: %w", err)
-		}
-
-		// Создаем новую запись с ВСЕМИ необходимыми полями
-		newURL := models.ShortenedLink{
-			OriginalURL: model.OriginalURL,
-			ShortCode:   token,
-			UserID:      model.UserID,
-			CreatedAt:   time.Now().UTC(),
-		}
-
-		result, err = s.storage.ShortenedLinkCreate(ctx, newURL)
-		if err != nil {
-			return fmt.Errorf("failed to create URL: %w", err)
-		}
-
-		return nil
-	})
-
+	// Пытаемся создать запись - хранилище само вернет конфликт если URL уже существует
+	result, err := s.storage.ShortenedLinkCreate(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
-			// Возвращаем найденный URL и ошибку конфликто о попытке дублирования
+			// Возвращаем существующий URL и ошибку конфликта
 			return result, models.ErrConflict
 		}
-		return models.ShortenedLink{}, fmt.Errorf("setting url error: %w", err)
+		return models.ShortenedLink{}, fmt.Errorf("failed to create URL: %w", err)
 	}
 
 	return result, nil

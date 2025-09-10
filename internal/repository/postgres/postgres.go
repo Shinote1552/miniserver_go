@@ -71,8 +71,8 @@ func initConnectionPools(db *sql.DB) {
 }
 
 // Выполняет функцию в транзакции, если opts == nil, применяется по умолчанию уровень ReadCommitted
-func (p *PostgresStorage) WithinTx(ctx context.Context, opts *sql.TxOptions, fn func(ctx context.Context) error) error {
-	return p.txm.WithTx(ctx, opts, fn)
+func (p *PostgresStorage) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	return p.txm.WithTx(ctx, nil, fn)
 }
 
 // Возвращает унифицированный интерфейс для выполнения SQL-запросов.
@@ -156,52 +156,42 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 }
 
 func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
-	var result models.ShortenedLink
-
-	err := p.WithinTx(ctx, nil, func(txCtx context.Context) error {
-		querier, err := p.GetQuerier(txCtx)
-		if err != nil {
-			return fmt.Errorf("failed to get querier: %w", err)
-		}
-
-		dbURL := dto.ShortenedLinkDBFromDomain(url)
-		var dbResult dto.ShortenedLinkDB
-
-		err = querier.QueryRowContext(txCtx, `
-            INSERT INTO urls (short_key, original_url, user_id, created_at)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (original_url) DO NOTHING
-            RETURNING id, short_key, original_url, user_id, created_at`,
-			dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
-		).Scan(&dbResult.ID, &dbResult.ShortCode, &dbResult.OriginalURL, &dbResult.UserID, &dbResult.CreatedAt)
-
-		if errors.Is(err, sql.ErrNoRows) {
-			var existing dto.ShortenedLinkDB
-			err := querier.QueryRowContext(txCtx,
-				"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
-				url.OriginalURL,
-			).Scan(&existing.ID, &existing.ShortCode, &existing.OriginalURL, &existing.UserID, &existing.CreatedAt)
-
-			if err != nil {
-				return fmt.Errorf("failed to get existing URL: %w", err)
-			}
-			result = dto.ShortenedLinkDBToDomain(existing)
-			return models.ErrConflict
-		}
-
-		if err != nil {
-			return fmt.Errorf("database error: %w", err)
-		}
-
-		result = dto.ShortenedLinkDBToDomain(dbResult)
-		return nil
-	})
-
-	if err != nil && !errors.Is(err, models.ErrConflict) {
-		return models.ShortenedLink{}, err
+	querier, err := p.GetQuerier(ctx)
+	if err != nil {
+		return models.ShortenedLink{}, fmt.Errorf("failed to get querier: %w", err)
 	}
 
-	return result, err
+	dbURL := dto.ShortenedLinkDBFromDomain(url)
+	var dbResult dto.ShortenedLinkDB
+
+	// Пытаемся вставить запись, при конфликте НИЧЕГО не делаем
+	err = querier.QueryRowContext(ctx, `
+        INSERT INTO urls (short_key, original_url, user_id, created_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (original_url) DO NOTHING
+        RETURNING id, short_key, original_url, user_id, created_at`,
+		dbURL.ShortCode, dbURL.OriginalURL, dbURL.UserID, dbURL.CreatedAt,
+	).Scan(&dbResult.ID, &dbResult.ShortCode, &dbResult.OriginalURL, &dbResult.UserID, &dbResult.CreatedAt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		// Конфликт - запись уже существует, возвращаем существующую
+		var existing dto.ShortenedLinkDB
+		err := querier.QueryRowContext(ctx,
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			url.OriginalURL,
+		).Scan(&existing.ID, &existing.ShortCode, &existing.OriginalURL, &existing.UserID, &existing.CreatedAt)
+
+		if err != nil {
+			return models.ShortenedLink{}, fmt.Errorf("failed to get existing URL: %w", err)
+		}
+		return dto.ShortenedLinkDBToDomain(existing), models.ErrConflict
+	}
+
+	if err != nil {
+		return models.ShortenedLink{}, fmt.Errorf("database error: %w", err)
+	}
+
+	return dto.ShortenedLinkDBToDomain(dbResult), nil
 }
 
 func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
@@ -261,7 +251,7 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
 	var result []models.ShortenedLink
 
-	err := p.WithinTx(ctx, nil, func(txCtx context.Context) error {
+	err := p.txm.WithTx(ctx, nil, func(txCtx context.Context) error {
 		querier, err := p.GetQuerier(txCtx)
 		if err != nil {
 			return fmt.Errorf("failed to get querier: %w", err)
