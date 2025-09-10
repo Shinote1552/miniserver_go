@@ -125,7 +125,7 @@ clean-all: clean
 
 ## lines: Count lines of code
 lines:
-	@echo "Lines of code: "
-	@find ./ -name '*.go' -type f -exec cat {} + | wc -l
+	@echo "Summary code lines in this project: "
+	@find ./ -type f -exec cat {} + | wc -l
 
 .DEFAULT_GOAL := help
