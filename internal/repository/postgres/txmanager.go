@@ -32,7 +32,7 @@ func NewSQLTxManager(db *sql.DB) *SQLTxManager {
 func (tm *SQLTxManager) WithTx(ctx context.Context, opts *sql.TxOptions, fn func(ctx context.Context) error) error {
 	if opts == nil {
 		opts = &sql.TxOptions{
-			Isolation: sql.LevelReadCommitted,
+			Isolation: sql.LevelSerializable,
 			ReadOnly:  false,
 		}
 	}
