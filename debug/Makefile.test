@@ -1,0 +1,104 @@
+# ==============================================================================
+# URL Shortener Service - Test Makefile
+# ==============================================================================
+
+.PHONY: help help-inmemory help-fallback
+
+DOCKER_COMPOSE = docker compose
+
+# ==============================================================================
+# TEST HELP
+# ==============================================================================
+
+## help: Show test environments help
+help:
+	@echo "URL Shortener Service - Test Environments:"
+	@echo ""
+	@echo "InMemory Version (@8081):"
+	@echo "  make -f debug/Makefile.test run-inmemory     Start in background"
+	@echo "  make -f debug/Makefile.test dev-inmemory     Start in foreground"
+	@echo "  make -f debug/Makefile.test test-inmemory    Full API test"
+	@echo "  make -f debug/Makefile.test ping-inmemory    Quick ping test"
+	@echo "  make -f debug/Makefile.test logs-inmemory    Show recent logs"
+	@echo ""
+	@echo "Fallback Version (@8082):"
+	@echo "  make -f debug/Makefile.test run-fallback     Start in background"
+	@echo "  make -f debug/Makefile.test dev-fallback     Start in foreground"
+	@echo "  make -f debug/Makefile.test test-fallback    Full API test"
+	@echo "  make -f debug/Makefile.test ping-fallback    Quick ping test"
+	@echo "  make -f debug/Makefile.test logs-fallback    Show recent logs"
+	@echo ""
+	@echo "All Test Versions:"
+	@echo "  make -f debug/Makefile.test test-all         Test all versions"
+	@echo "  make -f debug/Makefile.test clean-test       Clean test containers"
+
+# ==============================================================================
+# INMEMORY VERSION (@8081)
+# ==============================================================================
+
+## run-inmemory: Start in-memory version in background
+run-inmemory:
+	$(DOCKER_COMPOSE) --profile inmemory up -d urlshortener-inmemory
+
+## dev-inmemory: Start in-memory version in foreground
+dev-inmemory:
+	$(DOCKER_COMPOSE) --profile inmemory up urlshortener-inmemory
+
+## test-inmemory: Full API test
+test-inmemory:
+	@./scripts/test-api.sh http://localhost:8081
+
+## ping-inmemory: Quick ping test
+ping-inmemory:
+	@./scripts/test-ping.sh http://localhost:8081
+
+## logs-inmemory: Show recent logs
+logs-inmemory:
+	$(DOCKER_COMPOSE) --profile inmemory logs --tail=50 urlshortener-inmemory
+
+# ==============================================================================
+# FALLBACK VERSION (@8082)
+# ==============================================================================
+
+## run-fallback: Start fallback version in background
+run-fallback:
+	$(DOCKER_COMPOSE) --profile fallback up -d urlshortener-fallback
+
+## dev-fallback: Start fallback version in foreground
+dev-fallback:
+	$(DOCKER_COMPOSE) --profile fallback up urlshortener-fallback
+
+## test-fallback: Full API test
+test-fallback:
+	@./scripts/test-api.sh http://localhost:8082
+
+## ping-fallback: Quick ping test
+ping-fallback:
+	@./scripts/test-ping.sh http://localhost:8082
+
+## logs-fallback: Show recent logs
+logs-fallback:
+	$(DOCKER_COMPOSE) --profile fallback logs --tail=50 urlshortener-fallback
+
+# ==============================================================================
+# ALL TEST VERSIONS
+# ==============================================================================
+
+## test-all: Test all versions
+test-all:
+	@echo "=== Testing Postgres version (8080) ==="
+	@./scripts/test-api.sh http://localhost:8080
+	@echo ""
+	@echo "=== Testing InMemory version (8081) ==="
+	@./scripts/test-api.sh http://localhost:8081
+	@echo ""
+	@echo "=== Testing Fallback version (8082) ==="
+	@./scripts/test-api.sh http://localhost:8082
+
+## clean-test: Clean test containers
+clean-test:
+	$(DOCKER_COMPOSE) --profile inmemory down
+	$(DOCKER_COMPOSE) --profile fallback down
+	@docker rm -f urlshortener-inmemory urlshortener-fallback 2>/dev/null || true
+
+.DEFAULT_GOAL := help

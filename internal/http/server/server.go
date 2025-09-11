@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"time"
-	"urlshortener/domain/services/auth"
-	"urlshortener/domain/services/url_shortener"
 	"urlshortener/internal/config"
 	"urlshortener/internal/http/handlers/middlewares/authorization"
 	"urlshortener/internal/http/handlers/middlewares/compressor"
@@ -18,6 +16,8 @@ import (
 	"urlshortener/internal/http/handlers/url/find_by_id"
 	"urlshortener/internal/http/handlers/url/get_default"
 	"urlshortener/internal/http/handlers/url/list_user_urls"
+	"urlshortener/internal/services/auth"
+	"urlshortener/internal/services/url_shortener"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"

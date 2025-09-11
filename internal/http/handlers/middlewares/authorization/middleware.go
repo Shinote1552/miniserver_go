@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 	"urlshortener/internal/http/httputils"
 )
 

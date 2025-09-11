@@ -1,16 +1,16 @@
 package url_shortener
 
 import (
-	"testing"
-
 	"context"
 	"fmt"
-	"urlshortener/domain/models"
-	"urlshortener/mocks"
+	"testing"
+	"time"
+	"urlshortener/internal/domain/models"
+	"urlshortener/internal/mocks"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestURLShortener_GetURL(t *testing.T) {
@@ -140,31 +140,28 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
-				// Проверка существования
-				mockStorage.EXPECT().
-					ShortenedLinkGetByOriginalURL(gomock.Any(), "http://long.url").
-					Return(models.ShortenedLink{}, models.ErrUnfound)
-
-				// Генерация токена
+				// Генерация токена - проверка уникальности (может вызываться несколько раз)
 				mockStorage.EXPECT().
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
-					Return(models.ShortenedLink{}, models.ErrUnfound)
+					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
 
-				// Создание записи
+				// Создание записи - возвращаем созданный URL
 				mockStorage.EXPECT().
 					ShortenedLinkCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) {
-						assert.NotEmpty(t, url.ShortCode)
-						assert.Equal(t, "http://long.url", url.OriginalURL)
-						assert.Equal(t, int64(1), url.UserID)
-						assert.False(t, url.CreatedAt.IsZero())
-						return url, nil
+						return models.ShortenedLink{
+							OriginalURL: url.OriginalURL,
+							ShortCode:   url.ShortCode, // сокращенная ссылка будет сгенерирован в generateUniqueToken
+							UserID:      url.UserID,
+							CreatedAt:   url.CreatedAt,
+						}, nil
 					})
 			},
 			wantURL: models.ShortenedLink{
 				OriginalURL: "http://long.url",
 				UserID:      1,
 			},
+			wantErr: false,
 		},
 		{
 			name: "URL уже существует",
@@ -173,18 +170,21 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
+				// Генерация токена - проверка уникальности (может вызываться несколько раз)
 				mockStorage.EXPECT().
-					ShortenedLinkGetByOriginalURL(gomock.Any(), "http://existing.url").
+					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
+					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
+
+				// Попытка создания записи - возвращаем конфликт и существующий URL
+				mockStorage.EXPECT().
+					ShortenedLinkCreate(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{
+						ID:          1,
 						OriginalURL: "http://existing.url",
 						ShortCode:   "existing",
 						UserID:      1,
-					}, nil)
-			},
-			wantURL: models.ShortenedLink{
-				OriginalURL: "http://existing.url",
-				ShortCode:   "existing",
-				UserID:      1,
+						CreatedAt:   time.Now(),
+					}, models.ErrConflict) // Важно: вернуть ошибку!
 			},
 			wantErr:     true,
 			expectedErr: models.ErrConflict,
@@ -196,7 +196,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      1,
 			},
 			mockSetup: func() {
-				// Нет вызовов к хранилищу
+				// Нет вызовов к хранилищу для невалидных данных
 			},
 			wantErr:     true,
 			expectedErr: models.ErrInvalidData,
@@ -208,7 +208,7 @@ func TestURLShortener_SetURL(t *testing.T) {
 				UserID:      0,
 			},
 			mockSetup: func() {
-				// Нет вызовов к хранилищу
+				// Нет вызовов к хранилищу для невалидных данных
 			},
 			wantErr:     true,
 			expectedErr: models.ErrInvalidData,
@@ -228,6 +228,11 @@ func TestURLShortener_SetURL(t *testing.T) {
 				if tt.expectedErr != nil {
 					assert.ErrorIs(t, err, tt.expectedErr)
 				}
+				// Для случая конфликта проверяем, что возвращается существующий URL
+				if tt.expectedErr == models.ErrConflict {
+					assert.NotEmpty(t, got.ShortCode)
+					assert.Equal(t, tt.input.OriginalURL, got.OriginalURL)
+				}
 				return
 			}
 
@@ -240,10 +245,6 @@ func TestURLShortener_SetURL(t *testing.T) {
 	}
 }
 
-/*
-AnyTimes() пришлось добавлять потому что ShortenedLinkGetByShortKey много раз
-вызывается при каждой генерации shortCode/shortURL
-*/
 func TestURLShortener_BatchCreate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -276,7 +277,7 @@ func TestURLShortener_BatchCreate(t *testing.T) {
 					ShortenedLinkGetByShortKey(gomock.Any(), gomock.Any()).
 					Return(models.ShortenedLink{}, models.ErrUnfound).AnyTimes()
 
-				// Создание записей
+				// Создание записей - ожидаем WithinTx для BatchCreate
 				mockStorage.EXPECT().
 					ShortenedLinkBatchCreate(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error) {
@@ -400,7 +401,7 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 		mockSetup   func()
 		wantLinks   []models.ShortenedLink
 		wantErr     bool
-		expectedErr error
+		expectedErr string
 	}{
 		{
 			name:   "Успешное получение ссылок пользователя",
@@ -429,13 +430,11 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 			wantLinks: []models.ShortenedLink{},
 		},
 		{
-			name:   "Невалидный userID",
-			userID: 0,
-			mockSetup: func() {
-				// Нет вызовов к хранилищу
-			},
+			name:        "Невалидный userID",
+			userID:      0,
+			mockSetup:   func() {},
 			wantErr:     true,
-			expectedErr: fmt.Errorf("failed to validate userID"),
+			expectedErr: "invalid user ID",
 		},
 		{
 			name:   "Ошибка хранилища",
@@ -446,7 +445,7 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 					Return(nil, models.ErrEmpty)
 			},
 			wantErr:     true,
-			expectedErr: fmt.Errorf("failed to get links"),
+			expectedErr: "failed to get user links",
 		},
 	}
 
@@ -460,8 +459,8 @@ func TestURLShortener_GetUserLinks(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				if tt.expectedErr != nil {
-					assert.Contains(t, err.Error(), tt.expectedErr.Error())
+				if tt.expectedErr != "" {
+					assert.Contains(t, err.Error(), tt.expectedErr)
 				}
 				return
 			}

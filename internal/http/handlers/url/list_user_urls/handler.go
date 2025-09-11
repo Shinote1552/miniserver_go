@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"urlshortener/domain/models"
+	"strings"
+	"time"
+	"urlshortener/internal/domain/models"
 	"urlshortener/internal/http/dto"
 	"urlshortener/internal/http/httputils"
 )
@@ -16,22 +18,33 @@ type ServiceURLShortener interface {
 
 func HandlerGetURLJsonBatch(svc ServiceURLShortener, urlroot string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
 
 		userID, ok := ctx.Value("user_id").(int64)
 		if !ok || userID == 0 {
-			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required, userID :"+fmt.Sprintf("%d", userID))
+			httputils.WriteJSONError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
 		shortLinks, err := svc.GetUserLinks(ctx, userID)
 
-		if err != nil || len(shortLinks) == 0 {
+		if err != nil {
 			if errors.Is(err, models.ErrUnfound) || errors.Is(err, models.ErrEmpty) {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "failed to get user URLs, userID: "+fmt.Sprintf("%d", userID))
+			if strings.Contains(err.Error(), "failed to validate userID") {
+				httputils.WriteJSONError(w, http.StatusBadRequest, "invalid user ID")
+				return
+			}
+			httputils.WriteJSONError(w, http.StatusInternalServerError,
+				fmt.Sprintf("failed to get user URLs: %v", err))
+			return
+		}
+
+		if len(shortLinks) == 0 {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 

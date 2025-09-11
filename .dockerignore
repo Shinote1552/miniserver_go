@@ -1,0 +1,14 @@
+.git
+.gitignore
+README.md
+Dockerfile
+compose.yaml
+Makefile
+tmp/
+*.log
+.env
+vendor/
+.coverage
+cookies.txt
+docks
+coverage.out

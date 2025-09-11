@@ -2,7 +2,7 @@ package dto
 
 import (
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 )
 
 // Request types
@@ -10,7 +10,7 @@ type (
 
 	// ShortenedLinkTextRequest представляет DTO для текстового запроса на сокращение URL
 	ShortenedLinkTextRequest struct {
-		URL string
+		URL string // тут text/plain
 	}
 
 	ShortenedLinkSingleRequest struct {

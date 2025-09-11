@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
-	"urlshortener/domain/models"
+	"urlshortener/internal/domain/models"
 
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -14,6 +14,8 @@ import (
 type UserStorage interface {
 	UserCreate(ctx context.Context, user models.User) (models.User, error)
 	UserGetByID(ctx context.Context, id int64) (models.User, error)
+
+	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 type Authentication struct {
@@ -38,14 +40,27 @@ func NewAuthentication(userStorage UserStorage, secretKey string, accessExp time
 func (a *Authentication) Register(ctx context.Context, user models.User) (models.User, string, time.Time, error) {
 	user.CreatedAt = time.Now().UTC()
 
-	createdUser, err := a.storage.UserCreate(ctx, user)
-	if err != nil {
-		return user, "", time.Time{}, fmt.Errorf("failed to create user: %w", err)
-	}
+	var createdUser models.User
+	var jwtToken string
+	var tokenExpiry time.Time
 
-	jwtToken, tokenExpiry, err := a.jwtGenerate(createdUser.ID)
+	err := a.storage.WithinTx(ctx, func(ctx context.Context) error {
+		var err error
+		createdUser, err = a.storage.UserCreate(ctx, user)
+		if err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+
+		jwtToken, tokenExpiry, err = a.jwtGenerate(createdUser.ID)
+		if err != nil {
+			return fmt.Errorf("failed to generate token: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return createdUser, "", time.Time{}, fmt.Errorf("failed to generate token: %w", err)
+		return models.User{}, "", time.Time{}, err
 	}
 
 	return createdUser, jwtToken, tokenExpiry, nil
@@ -81,7 +96,7 @@ func (a *Authentication) jwtGenerate(userID int64) (string, time.Time, error) {
 	}
 
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	jwtToken, err := newToken.SignedString([]byte(a.secretKey))
+	jwtToken, err := newToken.SignedString(a.secretKey)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -89,7 +104,6 @@ func (a *Authentication) jwtGenerate(userID int64) (string, time.Time, error) {
 	return jwtToken, expiryTime, nil
 }
 
-// Одновременно здесь происходит валидация токена
 func (a *Authentication) getUserId(tokenString string) (int64, error) {
 	claims := &Claims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims,
@@ -97,7 +111,7 @@ func (a *Authentication) getUserId(tokenString string) (int64, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
-			return []byte(a.secretKey), nil
+			return a.secretKey, nil
 		})
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse token: %w", err)
@@ -107,6 +121,5 @@ func (a *Authentication) getUserId(tokenString string) (int64, error) {
 		return 0, fmt.Errorf("token is invalid")
 	}
 
-	fmt.Printf("Decoded claims: %+v\n", claims) // <- добавить для отладки
 	return claims.UserID, nil
 }
