@@ -301,36 +301,6 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	return result, nil
 }
 
-func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
-	if shortKey == "" {
-		return models.ErrInvalidData
-	}
-
-	querier, err := p.GetQuerier(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get querier: %w", err)
-	}
-
-	result, err := querier.ExecContext(ctx,
-		"DELETE FROM urls WHERE short_key = $1",
-		shortKey,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete URL: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return models.ErrUnfound
-	}
-
-	return nil
-}
-
 // List остается без изменений
 func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error) {
 	if limit <= 0 || offset < 0 {
@@ -454,4 +424,36 @@ func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([
 	}
 
 	return shortLinks, nil
+}
+
+func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, userID int64, shortCode []string) error {
+	if userID <= 0 || len(shortCode) == 0 {
+		return models.ErrInvalidData
+	}
+	querier, err := p.GetQuerier(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to get querier: %w", err)
+	}
+
+	// в случае проблем со слайсом ANY($3::text[])
+
+	_, err = querier.ExecContext(ctx, `
+	UPDATE urls
+	SET is_deleted = true, deleted_at = $1
+	WHERE user_id = $2 AND short_key = ANY($3) AND is_deleted = false`,
+		time.Now().UTC(), userID, shortCode)
+
+	if err != nil {
+		return fmt.Errorf("failed to batch delete URLs: %w", err)
+	}
+
+	// rowsAffected, err := result.RowsAffected()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get rows affected: %w", err)
+	// }
+
+	// p.log.Debug().Int64("rows_affected", rowsAffected).Msg("URLs soft deleted")
+
+	return nil
 }

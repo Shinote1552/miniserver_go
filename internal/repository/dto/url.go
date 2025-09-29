@@ -12,26 +12,32 @@ type (
 		OriginalURL string    `db:"original_url"`
 		ShortCode   string    `db:"short_key"`
 		UserID      int64     `db:"user_id"`
+		DeletedFlag bool      `db:"is_deleted"`
 		CreatedAt   time.Time `db:"created_at"`
+		DeletedAt   time.Time `db:"deleted_at"`
 	}
 )
 
-func ShortenedLinkDBToDomain(d ShortenedLinkDB) models.ShortenedLink {
+func ShortenedLinkDBToDomain(domain ShortenedLinkDB) models.ShortenedLink {
 	return models.ShortenedLink{
-		ID:          d.ID,
-		OriginalURL: d.OriginalURL,
-		ShortCode:   d.ShortCode,
-		UserID:      d.UserID,
-		CreatedAt:   d.CreatedAt,
+		ID:          domain.ID,
+		OriginalURL: domain.OriginalURL,
+		ShortCode:   domain.ShortCode,
+		UserID:      domain.UserID,
+		DeletedFlag: domain.DeletedFlag,
+		CreatedAt:   domain.CreatedAt,
+		DeletedAt:   domain.DeletedAt,
 	}
 }
 
-func ShortenedLinkDBFromDomain(url models.ShortenedLink) ShortenedLinkDB {
+func ShortenedLinkDBFromDomain(db models.ShortenedLink) ShortenedLinkDB {
 	return ShortenedLinkDB{
-		ID:          url.ID,
-		OriginalURL: url.OriginalURL,
-		ShortCode:   url.ShortCode,
-		UserID:      url.UserID,
-		CreatedAt:   url.CreatedAt,
+		ID:          db.ID,
+		OriginalURL: db.OriginalURL,
+		ShortCode:   db.ShortCode,
+		UserID:      db.UserID,
+		DeletedFlag: db.DeletedFlag,
+		CreatedAt:   db.CreatedAt,
+		DeletedAt:   db.DeletedAt,
 	}
 }

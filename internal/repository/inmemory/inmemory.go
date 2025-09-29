@@ -16,8 +16,11 @@ type InmemoryStorage struct {
 
 	// Дополнительные индексы(пока что почти такие же как и в Postgres)
 	originalURLIndex map[string]string
-	createdAtIndex   map[string][]string
 	userURLsIndex    map[int64][]string
+	urlsIsDeleted    map[string]bool
+
+	createdAtIndex map[string][]string
+	deletedAtIndex map[string][]string
 
 	lastURLID  int64
 	lastUserID int64
@@ -29,7 +32,9 @@ func NewStorage() *InmemoryStorage {
 		users:            make(map[int64]dto.UserDB),
 		originalURLIndex: make(map[string]string),
 		createdAtIndex:   make(map[string][]string),
+		deletedAtIndex:   make(map[string][]string),
 		userURLsIndex:    make(map[int64][]string),
+		urlsIsDeleted:    make(map[string]bool),
 		lastURLID:        0,
 		lastUserID:       0,
 	}
