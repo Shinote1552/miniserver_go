@@ -143,7 +143,7 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 	}
 
 	rows, err := querier.QueryContext(ctx,
-		`SELECT id, short_key, original_url, user_id, created_at 
+		`SELECT id, short_key, original_url, user_id, is_deleted, created_at 
          FROM urls 
          WHERE user_id = $1 
          ORDER BY created_at`, id)
@@ -207,9 +207,9 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	}
 
 	err = querier.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
+		"SELECT id, short_key, original_url, user_id, is_deleted, created_at FROM urls WHERE short_key = $1",
 		shortKey,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.DeletedFlag, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -412,6 +412,7 @@ func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([
 			&linkDB.ShortCode,
 			&linkDB.OriginalURL,
 			&linkDB.UserID,
+			&linkDB.DeletedFlag,
 			&linkDB.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan link: %w", err)
@@ -438,10 +439,7 @@ func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, userID i
 
 	// в случае проблем со слайсом ANY($3::text[])
 
-	_, err = querier.ExecContext(ctx, `
-	UPDATE urls
-	SET is_deleted = true, deleted_at = $1
-	WHERE user_id = $2 AND short_key = ANY($3) AND is_deleted = false`,
+	_, err = querier.ExecContext(ctx, "UPDATE urls SET is_deleted = true, deleted_at = $1 WHERE user_id = $2 AND short_key = ANY($3) AND is_deleted = false",
 		time.Now().UTC(), userID, shortCode)
 
 	if err != nil {

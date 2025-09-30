@@ -70,6 +70,20 @@ func (mr *MockURLStorageMockRecorder) ShortenedLinkBatchCreate(ctx, urls any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShortenedLinkBatchCreate", reflect.TypeOf((*MockURLStorage)(nil).ShortenedLinkBatchCreate), ctx, urls)
 }
 
+// ShortenedLinkBatchDelete mocks base method.
+func (m *MockURLStorage) ShortenedLinkBatchDelete(ctx context.Context, userID int64, shortCode []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ShortenedLinkBatchDelete", ctx, userID, shortCode)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ShortenedLinkBatchDelete indicates an expected call of ShortenedLinkBatchDelete.
+func (mr *MockURLStorageMockRecorder) ShortenedLinkBatchDelete(ctx, userID, shortCode any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShortenedLinkBatchDelete", reflect.TypeOf((*MockURLStorage)(nil).ShortenedLinkBatchDelete), ctx, userID, shortCode)
+}
+
 // ShortenedLinkBatchExists mocks base method.
 func (m *MockURLStorage) ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error) {
 	m.ctrl.T.Helper()

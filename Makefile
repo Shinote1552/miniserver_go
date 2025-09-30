@@ -129,3 +129,6 @@ lines:
 	@find ./ -type f -exec cat {} + | wc -l
 
 .DEFAULT_GOAL := help
+
+mockgen: 
+	@go generate ./...
