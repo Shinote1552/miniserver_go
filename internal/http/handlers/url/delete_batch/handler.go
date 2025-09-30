@@ -8,7 +8,7 @@ import (
 )
 
 type ServiceURLShortener interface {
-	BatchDelete(ctx context.Context, userID int64, shortCode []string) error
+	BatchDelete(ctx context.Context, userID int64, shortCode []string)
 }
 
 func HandlerDeleteURLBatch(svc ServiceURLShortener) http.HandlerFunc {
@@ -24,15 +24,12 @@ func HandlerDeleteURLBatch(svc ServiceURLShortener) http.HandlerFunc {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "invalid request format")
 		}
 
-		if len(shortCode) == 0 {
+		if userID <= 0 || len(shortCode) == 0 {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "Empty URL list")
 			return
 		}
 
-		if err := svc.BatchDelete(r.Context(), userID, shortCode); err != nil {
-			httputils.WriteJSONError(w, http.StatusInternalServerError, "deletion failed")
-		}
-
+		svc.BatchDelete(r.Context(), userID, shortCode)
 		w.WriteHeader(http.StatusAccepted)
 	}
 }

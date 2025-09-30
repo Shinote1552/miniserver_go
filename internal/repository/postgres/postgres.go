@@ -427,8 +427,8 @@ func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([
 	return shortLinks, nil
 }
 
-func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, userID int64, shortCode []string) error {
-	if userID <= 0 || len(shortCode) == 0 {
+func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, id int64, shortCode []string) error {
+	if id <= 0 || len(shortCode) == 0 {
 		return models.ErrInvalidData
 	}
 	querier, err := p.GetQuerier(ctx)
@@ -440,7 +440,7 @@ func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, userID i
 	// в случае проблем со слайсом ANY($3::text[])
 
 	_, err = querier.ExecContext(ctx, "UPDATE urls SET is_deleted = true, deleted_at = $1 WHERE user_id = $2 AND short_key = ANY($3) AND is_deleted = false",
-		time.Now().UTC(), userID, shortCode)
+		time.Now().UTC(), id, shortCode)
 
 	if err != nil {
 		return fmt.Errorf("failed to batch delete URLs: %w", err)

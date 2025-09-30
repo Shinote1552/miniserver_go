@@ -22,7 +22,7 @@ type URLStorage interface {
 	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
-	ShortenedLinkBatchDelete(ctx context.Context, userID int64, shortCode []string) error
+	ShortenedLinkBatchDelete(ctx context.Context, id int64, shortCode []string) error
 	Ping(ctx context.Context) error
 
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
@@ -173,8 +173,25 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 	return append(result, createdURLs...), nil
 }
 
-func (s *URLShortener) BatchDelete(ctx context.Context, userID int64, shortCode []string) error {
-	return nil
+func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []string) {
+
+	const (
+		numOfWorkers = 4
+		batchSize    = 64
+	)
+
+	status := make(chan error)
+	batchData := make(chan []string)
+
+	go func() {
+		defer close(batchData)
+		for i := 0; i < len(shortCode); i += batchSize {
+				
+		}
+
+		batchData <- 
+	}()
+
 }
 
 // PingDataBase проверяет соединение с хранилищем
