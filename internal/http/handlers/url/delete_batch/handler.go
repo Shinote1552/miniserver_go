@@ -22,14 +22,15 @@ func HandlerDeleteURLBatch(svc ServiceURLShortener) http.HandlerFunc {
 		var shortCode []string
 		if err := json.NewDecoder(r.Body).Decode(&shortCode); err != nil {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "invalid request format")
+			return
 		}
 
-		if userID <= 0 || len(shortCode) == 0 {
+		if len(shortCode) == 0 {
 			httputils.WriteJSONError(w, http.StatusBadRequest, "Empty URL list")
 			return
 		}
 
 		svc.BatchDelete(r.Context(), userID, shortCode)
-		w.WriteHeader(http.StatusAccepted)
+		httputils.WriteTextResponse(w, http.StatusAccepted, "delete request accepted")
 	}
 }

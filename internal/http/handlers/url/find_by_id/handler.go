@@ -23,7 +23,7 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 
 		if err != nil {
 			if errors.Is(err, models.ErrGone) {
-				httputils.WriteTextError(w, http.StatusGone, fmt.Sprintf("GetURL Error(): %v", err))
+				httputils.WriteTextError(w, http.StatusGone, "URL has been deleted")
 				return
 			}
 			if errors.Is(err, models.ErrUnfound) {
@@ -34,5 +34,6 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 			return
 		}
 		httputils.WriteRedirect(w, url.OriginalURL, false)
+
 	}
 }
