@@ -8,7 +8,7 @@ echo "=== Comprehensive API Tests: $BASE_URL ==="
 echo ""
 
 # Очистка предыдущих файлов
-rm -f cookies.txt short_url.txt response.json
+rm -f cookies.txt short_url.txt response.json batch_response.json delete_ids.txt
 
 # Проверяем что сервис доступен
 echo "Checking service availability..."
@@ -82,15 +82,21 @@ if curl -s -X POST --max-time $TIMEOUT \
     -b cookies.txt \
     -d "$BATCH_DATA" \
     -w "Status: %{http_code}\n" \
-    "$BASE_URL/api/shorten/batch" | tee response.json; then
+    "$BASE_URL/api/shorten/batch" | tee batch_response.json; then
     echo "✓ Batch URLs created"
-    echo "Response: $(cat response.json)"
+    echo "Response: $(cat batch_response.json)"
+    
+    # Сохраняем short_urls для последующего удаления
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '.[].short_url' batch_response.json | sed "s|$BASE_URL/||" > delete_ids.txt
+        echo "Short IDs saved for deletion: $(cat delete_ids.txt | tr '\n' ' ')"
+    fi
 else
     echo "✗ Batch URL creation failed"
 fi
 echo ""
 
-echo "3.4. GET /api/user/urls:"
+echo "3.4. GET /api/user/urls (before deletion):"
 if curl -s --max-time $TIMEOUT -X GET \
     -b cookies.txt \
     -w "Status: %{http_code}\n" \
@@ -99,7 +105,7 @@ if curl -s --max-time $TIMEOUT -X GET \
     RESPONSE=$(cat response.json)
     if [ -n "$RESPONSE" ]; then
         echo "✓ User URLs retrieved"
-        echo "Response: $RESPONSE"
+        echo "Response length: ${#RESPONSE} characters"
         
         # Простой подсчет элементов (если это JSON массив)
         if echo "$RESPONSE" | grep -q "\[.*\]"; then
@@ -115,8 +121,8 @@ else
 fi
 echo ""
 
-# 4. Тестируем редирект
-echo "4. Testing redirect:"
+# 4. Тестируем редирект ДО удаления
+echo "4. Testing redirect BEFORE deletion:"
 if [ -f short_url.txt ]; then
     SHORT_URL=$(cat short_url.txt | tr -d '\n' | tr -d '\r')
     echo "Testing redirect for: $SHORT_URL"
@@ -161,12 +167,108 @@ if curl -s -X POST --max-time $TIMEOUT \
     "$BASE_URL/api/shorten/batch" | tee response.json; then
     echo "✓ Large batch URLs created"
     echo "Response: $(cat response.json)"
+    
+    # Сохраняем дополнительные ID для удаления
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '.[].short_url' response.json | sed "s|$BASE_URL/||" >> delete_ids.txt
+        echo "Additional short IDs saved for deletion"
+    fi
 else
     echo "✗ Large batch URL creation failed"
 fi
 echo ""
 
+# 6. ТЕСТИРОВАНИЕ BATCH DELETE
+echo "6. Testing BATCH DELETE functionality:"
+
+if [ -f delete_ids.txt ] && [ -s delete_ids.txt ]; then
+    # Берем первые 3 ID для теста удаления
+    DELETE_IDS=$(head -3 delete_ids.txt | tr '\n' ',' | sed 's/,$//')
+    DELETE_JSON="[$(echo $DELETE_IDS | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')]"
+    
+    echo "DELETE request with IDs: $DELETE_IDS"
+    echo "Request body: $DELETE_JSON"
+    
+    echo "6.1. Sending DELETE /api/user/urls:"
+    if curl -s -X DELETE --max-time $TIMEOUT \
+        -H "Content-Type: application/json" \
+        -b cookies.txt \
+        -d "$DELETE_JSON" \
+        -w "Status: %{http_code}\n" \
+        "$BASE_URL/api/user/urls" | tee response.json; then
+        echo "✓ DELETE request accepted"
+    else
+        echo "✗ DELETE request failed"
+    fi
+    echo ""
+    
+    # Ждем немного для асинхронной обработки
+    echo "Waiting 2 seconds for async processing..."
+    sleep 2
+    echo ""
+    
+    echo "6.2. Testing access to deleted URLs (should return 410 Gone):"
+    for id in $(echo $DELETE_IDS | tr ',' ' '); do
+        echo "Testing full URL: $id"
+        # Извлекаем short ID для отладки
+        SHORT_ID=$(echo "$id" | sed 's|.*/||')
+        echo "Extracted short ID: $SHORT_ID"
+        curl -s -o /dev/null -w "Status: %{http_code}\n" --max-time $TIMEOUT -X GET "$BASE_URL/$SHORT_ID"
+    done
+    
+    echo "6.3. GET /api/user/urls (after deletion):"
+    if curl -s --max-time $TIMEOUT -X GET \
+        -b cookies.txt \
+        -w "Status: %{http_code}\n" \
+        "$BASE_URL/api/user/urls" | tee response.json; then
+        
+        RESPONSE=$(cat response.json)
+        if [ -n "$RESPONSE" ]; then
+            echo "✓ User URLs retrieved after deletion"
+            echo "Response length: ${#RESPONSE} characters"
+        else
+            echo "No user URLs found after deletion"
+        fi
+    else
+        echo "✗ Failed to get user URLs after deletion"
+    fi
+    echo ""
+    
+else
+    echo "✗ No short IDs available for deletion test"
+    echo ""
+fi
+
+# 7. Тестируем некорректные запросы на удаление
+echo "7. Testing invalid DELETE requests:"
+
+echo "7.1. DELETE without authentication:"
+curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -d '["test1","test2"]' \
+    -w "Status: %{http_code}\n" \
+    "$BASE_URL/api/user/urls"
+echo ""
+
+echo "7.2. DELETE with empty array:"
+curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d '[]' \
+    -w "Status: %{http_code}\n" \
+    "$BASE_URL/api/user/urls"
+echo ""
+
+echo "7.3. DELETE with invalid JSON:"
+curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d 'invalid json' \
+    -w "Status: %{http_code}\n" \
+    "$BASE_URL/api/user/urls"
+echo ""
+
 # Очищаем временные файлы
-rm -f cookies.txt short_url.txt response.json
+rm -f cookies.txt short_url.txt response.json batch_response.json delete_ids.txt
 
 echo "=== All tests completed for $BASE_URL ==="

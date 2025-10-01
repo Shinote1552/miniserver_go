@@ -26,6 +26,10 @@ func HandlerGetURLWithID(svc ServiceURLShortener) http.HandlerFunc {
 				httputils.WriteTextError(w, http.StatusGone, fmt.Sprintf("GetURL Error(): %v", err))
 				return
 			}
+			if errors.Is(err, models.ErrUnfound) {
+				httputils.WriteTextError(w, http.StatusNotFound, "URL not found")
+				return
+			}
 			httputils.WriteTextError(w, http.StatusBadRequest, fmt.Sprintf("GetURL Error(): %v", err))
 			return
 		}

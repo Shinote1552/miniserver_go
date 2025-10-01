@@ -197,7 +197,6 @@ func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []st
 					select {
 					case val, ok := <-batchDataCh:
 						if !ok {
-							statusCh = nil
 							return
 						}
 
@@ -253,7 +252,6 @@ func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []st
 			select {
 			case val, ok := <-statusCh:
 				if !ok {
-					statusCh = nil
 					return
 				}
 				if val != nil {
