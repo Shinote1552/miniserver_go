@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 	"urlshortener/internal/domain/models"
 )
@@ -167,10 +168,98 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 }
 
 func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []string) {
-	if len(shortCode) == 0 {
-		return
+	/*
+		Пока что константы выдуманы лишь для примера
+	*/
+	const (
+		numOfRetry   = 5
+		numOfWorkers = 4
+		batchSize    = 64
+	)
+
+	statusCh := make(chan error)
+	batchDataCh := make(chan []string)
+	wgWorkers := sync.WaitGroup{}
+
+	for i := 0; i < numOfWorkers; i++ {
+		wgWorkers.Add(1)
+		go func() {
+			defer wgWorkers.Done()
+			func() {
+				for {
+					select {
+					case val, ok := <-batchDataCh:
+						if !ok {
+							return
+						}
+
+						var err error
+						for i := 0; i < numOfRetry; i++ {
+							err = s.storage.ShortenedLinkBatchDelete(ctx, id, val)
+							if err == nil {
+								break
+							}
+						}
+						select {
+						case statusCh <- err:
+						case <-ctx.Done():
+							return
+						}
+					case <-ctx.Done():
+						return
+					}
+				}
+
+			}()
+		}()
 	}
-	s.storage.ShortenedLinkBatchDelete(ctx, id, shortCode)
+
+	go func() {
+		defer close(batchDataCh)
+		for i := 0; i < len(shortCode); i += batchSize {
+			end := i + batchSize
+			if end > len(shortCode) {
+				end = len(shortCode)
+			}
+
+			prepareBatch := shortCode[i:end]
+			/*
+				or we can use min():
+					prepareBatch := shortCode[i:min(i + batchSize, len(shortCode))]
+			*/
+			batchDataCh <- prepareBatch
+		}
+	}()
+
+	go func() {
+		defer close(statusCh)
+		wgWorkers.Wait()
+	}()
+
+	go func() {
+		/*
+			по идее здесь просто логгируем все возникшие ошибки,
+			пока что у меня логгер лишь на уровне middleware
+		*/
+		for {
+			select {
+			case val, ok := <-statusCh:
+				if !ok {
+					return
+				}
+				if val != nil {
+					/*
+						log.
+						Error().
+						Err(val).
+						Msg("Failed to delete batchData")
+					*/
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // PingDataBase проверяет соединение с хранилищем

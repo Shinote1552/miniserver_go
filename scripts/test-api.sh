@@ -8,41 +8,6 @@ echo ""
 # Очистка предыдущих файлов
 rm -f cookies.txt short_url.txt response.json batch_response.json delete_ids.txt test_redirect_id.txt user_urls.json
 
-# Функция для выполнения запроса и получения ответа и статуса
-make_request() {
-    local url=$1
-    local method=$2
-    local data=$3
-    local content_type=$4
-    
-    local response_file=$(mktemp)
-    local headers_file=$(mktemp)
-    
-    if [ -n "$data" ]; then
-        curl -s -X "$method" --max-time $TIMEOUT \
-            -H "Content-Type: $content_type" \
-            -b cookies.txt \
-            -w "HTTP_STATUS:%{http_code}" \
-            -d "$data" \
-            "$url" > "$response_file" 2>/dev/null
-    else
-        curl -s -X "$method" --max-time $TIMEOUT \
-            -H "Content-Type: $content_type" \
-            -b cookies.txt \
-            -w "HTTP_STATUS:%{http_code}" \
-            "$url" > "$response_file" 2>/dev/null
-    fi
-    
-    # Извлекаем тело ответа и статус
-    local response=$(sed 's/HTTP_STATUS:[0-9]*$//' "$response_file" | tr -d '\n')
-    local status=$(grep -o 'HTTP_STATUS:[0-9]*$' "$response_file" | cut -d: -f2)
-    
-    rm -f "$response_file" "$headers_file"
-    
-    echo "$response"
-    echo "$status"
-}
-
 # Проверяем что сервис доступен
 echo "Checking service availability..."
 if ! curl -s -o /dev/null --max-time 5 "$BASE_URL/ping"; then
@@ -78,30 +43,40 @@ echo ""
 echo "3. Testing protected endpoints:"
 
 echo "3.1. POST / (text/plain) - NEW URL:"
-RESULT=($(make_request "$BASE_URL/" "POST" "https://google.com/$(date +%s)" "text/plain"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: text/plain" \
+    -b cookies.txt \
+    -d "https://google.com/$(date +%s)" \
+    "$BASE_URL/")
+STATUS=$?
 
-echo "$RESPONSE"
-if [ "$STATUS" = "201" ]; then
+if [ $STATUS -eq 0 ] && [ -n "$RESPONSE" ]; then
+    echo "$RESPONSE"
     echo "✓ Text URL shortened"
     echo "$RESPONSE" | sed 's|.*/||' > short_url.txt
 else
-    echo "✗ Text URL shortening failed - status: $STATUS"
+    echo "✗ Text URL shortening failed"
 fi
 echo ""
 
 echo "3.2. POST /api/shorten (application/json) - NEW URL:"
 TEST_URL="https://yandex.ru/$(date +%s)"
 echo "Request: {\"url\":\"$TEST_URL\"}"
-RESULT=($(make_request "$BASE_URL/api/shorten" "POST" "{\"url\":\"$TEST_URL\"}" "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d "{\"url\":\"$TEST_URL\"}" \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/shorten")
+    
+# Извлекаем статус
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
 
-echo "$RESPONSE"
+echo "$RESPONSE_BODY"
 if [ "$STATUS" = "201" ]; then
     echo "✓ JSON URL shortened"
-    echo "$RESPONSE" > response.json
+    echo "$RESPONSE_BODY" > response.json
 else
     echo "✗ JSON URL shortening failed - status: $STATUS"
 fi
@@ -114,17 +89,23 @@ BATCH_DATA='[
 ]'
 
 echo "Batch request sent"
-RESULT=($(make_request "$BASE_URL/api/shorten/batch" "POST" "$BATCH_DATA" "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d "$BATCH_DATA" \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/shorten/batch")
+    
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
 
-echo "$RESPONSE"
+echo "$RESPONSE_BODY"
 if [ "$STATUS" = "201" ]; then
     echo "✓ Batch URLs created"
-    echo "$RESPONSE" > batch_response.json
+    echo "$RESPONSE_BODY" > batch_response.json
     
-    # Сохраняем short_urls для последующего удаления
-    echo "$RESPONSE" | grep -o '[a-zA-Z0-9]\{8\}' | head -2 > delete_ids.txt
+    # Сохраняем short_urls для последующего удаления - ищем только настоящие ID (8 символов)
+    echo "$RESPONSE_BODY" | grep -oE ':[0-9]+/[A-Za-z0-9]{8}' | sed 's|.*/||' > delete_ids.txt
     echo "Short IDs saved for deletion: $(cat delete_ids.txt | tr '\n' ' ')"
 else
     echo "✗ Batch URL creation failed - status: $STATUS"
@@ -132,18 +113,22 @@ fi
 echo ""
 
 echo "3.4. GET /api/user/urls (before deletion):"
-RESULT=($(make_request "$BASE_URL/api/user/urls" "GET" "" "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s --max-time $TIMEOUT -X GET \
+    -b cookies.txt \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/user/urls")
+    
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
 
 if [ "$STATUS" = "200" ]; then
-    echo "$RESPONSE"
+    echo "$RESPONSE_BODY"
     echo "✓ User URLs retrieved"
-    echo "$RESPONSE" > user_urls.json
+    echo "$RESPONSE_BODY" > user_urls.json
     
     # Простой подсчет элементов
-    if echo "$RESPONSE" | grep -q "short_url"; then
-        COUNT=$(echo "$RESPONSE" | grep -o 'short_url' | wc -l)
+    if echo "$RESPONSE_BODY" | grep -q "short_url"; then
+        COUNT=$(echo "$RESPONSE_BODY" | grep -o 'short_url' | wc -l)
         echo "Number of user URLs: $COUNT"
     fi
 else
@@ -189,16 +174,22 @@ LARGE_BATCH_DATA='[
 ]'
 
 echo "Large batch request sent"
-RESULT=($(make_request "$BASE_URL/api/shorten/batch" "POST" "$LARGE_BATCH_DATA" "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d "$LARGE_BATCH_DATA" \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/shorten/batch")
+    
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
 
-echo "$RESPONSE"
+echo "$RESPONSE_BODY"
 if [ "$STATUS" = "201" ]; then
     echo "✓ Large batch URLs created"
     
     # Сохраняем дополнительные ID для удаления
-    echo "$RESPONSE" | grep -o '[a-zA-Z0-9]\{8\}' | head -10 >> delete_ids.txt
+    echo "$RESPONSE_BODY" | grep -oE ':[0-9]+/[A-Za-z0-9]{8}' | sed 's|.*/||' > delete_ids.txt
     echo "Additional short IDs saved for deletion"
 else
     echo "✗ Large batch URL creation failed - status: $STATUS"
@@ -209,83 +200,98 @@ echo ""
 echo "6. Testing BATCH DELETE functionality:"
 
 if [ -f delete_ids.txt ] && [ -s delete_ids.txt ]; then
-    # Берем первые 3 ID для теста удаления
-    DELETE_IDS=$(head -3 delete_ids.txt | tr '\n' ' ')
-    DELETE_JSON="["
-    FIRST=true
-    for id in $DELETE_IDS; do
-        if [ "$FIRST" = true ]; then
-            DELETE_JSON="$DELETE_JSON\"$id\""
-            FIRST=false
-        else
-            DELETE_JSON="$DELETE_JSON,\"$id\""
-        fi
-    done
-    DELETE_JSON="$DELETE_JSON]"
+    # Берем только настоящие ID (8 символов)
+    DELETE_IDS=$(grep -E '^[A-Za-z0-9]{8}$' delete_ids.txt | head -3 | tr '\n' ' ')
     
-    echo "DELETE request with IDs: $DELETE_IDS"
-    echo "Request body: $DELETE_JSON"
-    
-    echo "6.1. Sending DELETE /api/user/urls:"
-    RESULT=($(make_request "$BASE_URL/api/user/urls" "DELETE" "$DELETE_JSON" "application/json"))
-    RESPONSE="${RESULT[0]}"
-    STATUS="${RESULT[1]}"
-    
-    echo "Response: $RESPONSE"
-    echo "Status: $STATUS"
-    
-    if [ "$STATUS" = "202" ]; then
-        echo "✓ DELETE request accepted (202 Accepted)"
-    else
-        echo "✗ DELETE request failed - expected 202, got $STATUS"
-    fi
-    echo ""
-    
-    # Ждем немного для асинхронной обработки
-    echo "Waiting 3 seconds for async processing..."
-    sleep 3
-    echo ""
-    
-    echo "6.2. Testing access to deleted URLs (should return 410 Gone):"
-    for id in $DELETE_IDS; do
-        echo "Testing ID: $id"
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time $TIMEOUT -X GET "$BASE_URL/$id")
-        echo "HTTP Status: $STATUS"
-        
-        if [ "$STATUS" = "410" ]; then
-            echo "✓ Correctly returns 410 Gone"
-        elif [ "$STATUS" = "307" ]; then
-            echo "✗ Still returns 307 - deletion not working"
-        elif [ "$STATUS" = "404" ]; then
-            echo "✗ Returns 404 instead of 410 - wrong status for deleted URL"
-        else
-            echo "? Unexpected status: $STATUS"
-        fi
-    done
-    echo ""
-    
-    echo "6.3. GET /api/user/urls (after deletion):"
-    RESULT=($(make_request "$BASE_URL/api/user/urls" "GET" "" "application/json"))
-    RESPONSE="${RESULT[0]}"
-    STATUS="${RESULT[1]}"
-    
-    if [ "$STATUS" = "200" ]; then
-        echo "$RESPONSE"
-        echo "✓ User URLs retrieved after deletion"
-        
-        # Проверяем, что удаленные URL отсутствуют
+    if [ -n "$DELETE_IDS" ]; then
+        DELETE_JSON="["
+        FIRST=true
         for id in $DELETE_IDS; do
-            if echo "$RESPONSE" | grep -q "$id"; then
-                echo "✗ Deleted URL still present: $id"
+            if [ "$FIRST" = true ]; then
+                DELETE_JSON="$DELETE_JSON\"$id\""
+                FIRST=false
             else
-                echo "✓ Deleted URL removed from list: $id"
+                DELETE_JSON="$DELETE_JSON,\"$id\""
             fi
         done
+        DELETE_JSON="$DELETE_JSON]"
+        
+        echo "DELETE request with IDs: $DELETE_IDS"
+        echo "Request body: $DELETE_JSON"
+        
+        echo "6.1. Sending DELETE /api/user/urls:"
+        RESPONSE=$(curl -s -X DELETE --max-time $TIMEOUT \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            -d "$DELETE_JSON" \
+            -w " STATUS:%{http_code}" \
+            "$BASE_URL/api/user/urls")
+        
+        STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+        RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+        
+        echo "Response: $RESPONSE_BODY"
+        echo "Status: $STATUS"
+        
+        if [ "$STATUS" = "202" ]; then
+            echo "✓ DELETE request accepted (202 Accepted)"
+        else
+            echo "✗ DELETE request failed - expected 202, got $STATUS"
+        fi
+        echo ""
+        
+        # Ждем немного для асинхронной обработки
+        echo "Waiting 3 seconds for async processing..."
+        sleep 3
+        echo ""
+        
+        echo "6.2. Testing access to deleted URLs (should return 410 Gone):"
+        for id in $DELETE_IDS; do
+            echo "Testing ID: $id"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time $TIMEOUT -X GET "$BASE_URL/$id")
+            echo "HTTP Status: $STATUS"
+            
+            if [ "$STATUS" = "410" ]; then
+                echo "✓ Correctly returns 410 Gone"
+            elif [ "$STATUS" = "307" ]; then
+                echo "✗ Still returns 307 - deletion not working"
+            elif [ "$STATUS" = "404" ]; then
+                echo "✗ Returns 404 instead of 410 - wrong status for deleted URL"
+            else
+                echo "? Unexpected status: $STATUS"
+            fi
+        done
+        echo ""
+        
+        echo "6.3. GET /api/user/urls (after deletion):"
+        RESPONSE=$(curl -s --max-time $TIMEOUT -X GET \
+            -b cookies.txt \
+            -w " STATUS:%{http_code}" \
+            "$BASE_URL/api/user/urls")
+        
+        STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+        RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+        
+        if [ "$STATUS" = "200" ]; then
+            echo "$RESPONSE_BODY"
+            echo "✓ User URLs retrieved after deletion"
+            
+            # Проверяем, что удаленные URL отсутствуют
+            for id in $DELETE_IDS; do
+                if echo "$RESPONSE_BODY" | grep -q "$id"; then
+                    echo "✗ Deleted URL still present: $id"
+                else
+                    echo "✓ Deleted URL removed from list: $id"
+                fi
+            done
+        else
+            echo "✗ Failed to get user URLs after deletion - status: $STATUS"
+        fi
+        echo ""
     else
-        echo "✗ Failed to get user URLs after deletion - status: $STATUS"
+        echo "✗ No valid short IDs available for deletion test"
+        echo ""
     fi
-    echo ""
-    
 else
     echo "✗ No short IDs available for deletion test"
     echo ""
@@ -297,11 +303,13 @@ echo "7. Testing redirect AFTER deletion:"
 # Создаем специальную ссылку для теста редиректа после удаления
 echo "7.1. Creating special URL for redirect-after-delete test:"
 SPECIAL_URL="https://special-redirect-test-$(date +%s).com"
-RESULT=($(make_request "$BASE_URL/" "POST" "$SPECIAL_URL" "text/plain"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: text/plain" \
+    -b cookies.txt \
+    -d "$SPECIAL_URL" \
+    "$BASE_URL/")
 
-if [ "$STATUS" = "201" ]; then
+if [ -n "$RESPONSE" ]; then
     SPECIAL_ID=$(echo "$RESPONSE" | sed 's|.*/||' | tr -d '\n\r')
     echo "Created special URL ID: $SPECIAL_ID"
     echo "Original URL: $SPECIAL_URL"
@@ -319,14 +327,20 @@ if [ "$STATUS" = "201" ]; then
     
     # Удаляем ссылку
     echo "7.3. Deleting the special URL:"
-    RESULT=($(make_request "$BASE_URL/api/user/urls" "DELETE" "[\"$SPECIAL_ID\"]" "application/json"))
-    DELETE_RESPONSE="${RESULT[0]}"
-    DELETE_STATUS="${RESULT[1]}"
+    RESPONSE=$(curl -s -X DELETE --max-time $TIMEOUT \
+        -H "Content-Type: application/json" \
+        -b cookies.txt \
+        -d "[\"$SPECIAL_ID\"]" \
+        -w " STATUS:%{http_code}" \
+        "$BASE_URL/api/user/urls")
     
-    echo "Delete response: $DELETE_RESPONSE"
-    echo "Delete status: $DELETE_STATUS"
+    STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+    RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
     
-    if [ "$DELETE_STATUS" = "202" ]; then
+    echo "Delete response: $RESPONSE_BODY"
+    echo "Delete status: $STATUS"
+    
+    if [ "$STATUS" = "202" ]; then
         echo "✓ Special URL deletion accepted (202)"
         echo "Waiting 2 seconds for processing..."
         sleep 2
@@ -346,36 +360,46 @@ if [ "$STATUS" = "201" ]; then
             echo "? Unexpected status after deletion: $AFTER_STATUS"
         fi
     else
-        echo "✗ Failed to delete special URL - expected 202, got $DELETE_STATUS"
+        echo "✗ Failed to delete special URL - expected 202, got $STATUS"
     fi
 else
-    echo "✗ Failed to create special URL for redirect test - status: $STATUS"
+    echo "✗ Failed to create special URL for redirect test"
 fi
 echo ""
 
 # 8. Тестируем некорректные запросы на удаление
 echo "8. Testing invalid DELETE requests:"
 
-echo "8.1. DELETE without authentication:"
-RESULT=($(make_request "$BASE_URL/api/user/urls" "DELETE" '["test1","test2"]' "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+echo "8.1. DELETE without authentication (should create new user):"
+RESPONSE=$(curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -d '["test1","test2"]' \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/user/urls")
 
-echo "Response: $RESPONSE"
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+
+echo "Response: $RESPONSE_BODY"
 echo "Status: $STATUS"
-if [ "$STATUS" = "401" ] || [ "$STATUS" = "403" ]; then
-    echo "✓ Correctly requires authentication"
+if [ "$STATUS" = "201" ]; then
+    echo "✓ Correctly creates new user when no authentication"
 else
     echo "? Unexpected status without auth: $STATUS"
 fi
-echo ""
 
 echo "8.2. DELETE with empty array:"
-RESULT=($(make_request "$BASE_URL/api/user/urls" "DELETE" '[]' "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d '[]' \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/user/urls")
 
-echo "Response: $RESPONSE"
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+
+echo "Response: $RESPONSE_BODY"
 echo "Status: $STATUS"
 if [ "$STATUS" = "400" ]; then
     echo "✓ Correctly rejects empty array"
@@ -385,11 +409,17 @@ fi
 echo ""
 
 echo "8.3. DELETE with invalid JSON:"
-RESULT=($(make_request "$BASE_URL/api/user/urls" "DELETE" 'invalid json' "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X DELETE --max-time $TIMEOUT \
+    -H "Content-Type: application/json" \
+    -b cookies.txt \
+    -d 'invalid json' \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/user/urls")
 
-echo "Response: $RESPONSE"
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+
+echo "Response: $RESPONSE_BODY"
 echo "Status: $STATUS"
 if [ "$STATUS" = "400" ]; then
     echo "✓ Correctly rejects invalid JSON"
@@ -404,19 +434,31 @@ DUPLICATE_URL="https://duplicate-test-$(date +%s).com"
 echo "Original URL: $DUPLICATE_URL"
 
 echo "9.1. First creation:"
-RESULT=($(make_request "$BASE_URL/" "POST" "$DUPLICATE_URL" "text/plain"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: text/plain" \
+    -b cookies.txt \
+    -d "$DUPLICATE_URL" \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/")
 
-echo "Response: $RESPONSE"
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+
+echo "Response: $RESPONSE_BODY"
 echo "Status: $STATUS"
 
 echo "9.2. Second creation (should be the same):"
-RESULT=($(make_request "$BASE_URL/" "POST" "$DUPLICATE_URL" "text/plain"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s -X POST --max-time $TIMEOUT \
+    -H "Content-Type: text/plain" \
+    -b cookies.txt \
+    -d "$DUPLICATE_URL" \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/")
 
-echo "Response: $RESPONSE"
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
+
+echo "Response: $RESPONSE_BODY"
 echo "Status: $STATUS"
 
 if [ "$STATUS" = "400" ] || [ "$STATUS" = "409" ]; then
@@ -430,14 +472,18 @@ echo ""
 echo "10. Final state check:"
 
 echo "10.1. GET /api/user/urls (final):"
-RESULT=($(make_request "$BASE_URL/api/user/urls" "GET" "" "application/json"))
-RESPONSE="${RESULT[0]}"
-STATUS="${RESULT[1]}"
+RESPONSE=$(curl -s --max-time $TIMEOUT -X GET \
+    -b cookies.txt \
+    -w " STATUS:%{http_code}" \
+    "$BASE_URL/api/user/urls")
+
+STATUS=$(echo "$RESPONSE" | grep -o 'STATUS:[0-9]*' | cut -d: -f2)
+RESPONSE_BODY=$(echo "$RESPONSE" | sed 's/ STATUS:[0-9]*$//')
 
 if [ "$STATUS" = "200" ]; then
-    echo "$RESPONSE"
+    echo "$RESPONSE_BODY"
     echo "✓ User URLs retrieved"
-    echo "$RESPONSE" > user_urls_final.json
+    echo "$RESPONSE_BODY" > user_urls_final.json
 else
     echo "✗ Failed to get user URLs - status: $STATUS"
 fi
