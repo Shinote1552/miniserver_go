@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 	"urlshortener/internal/domain/models"
 )
@@ -13,6 +14,7 @@ import (
 /*
 URLStorage - основной интерфейс хранилища URL и shotURL
 */
+
 //go:generate mockgen -source=url_shortener.go -destination=../../mocks/mock_url_storage.go -package=mocks
 type URLStorage interface {
 	ShortenedLinkCreate(ctx context.Context, url models.ShortenedLink) (models.ShortenedLink, error) // Upsert
@@ -21,6 +23,7 @@ type URLStorage interface {
 	ShortenedLinkGetBatchByUser(ctx context.Context, id int64) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchCreate(ctx context.Context, urls []models.ShortenedLink) ([]models.ShortenedLink, error)
 	ShortenedLinkBatchExists(ctx context.Context, originalURLs []string) ([]models.ShortenedLink, error)
+	ShortenedLinkBatchDelete(ctx context.Context, id int64, shortCode []string) error
 	Ping(ctx context.Context) error
 
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
@@ -59,6 +62,7 @@ func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.Shor
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
+	// Получаем ссылку (включая удаленные)
 	url, err := s.storage.ShortenedLinkGetByShortKey(ctx, shortKey)
 	if err != nil {
 		if errors.Is(err, models.ErrUnfound) {
@@ -66,32 +70,31 @@ func (s *URLShortener) GetURL(ctx context.Context, shortKey string) (models.Shor
 		}
 		return models.ShortenedLink{}, fmt.Errorf("failed to get URL: %w", err)
 	}
+
+	// Проверяем флаг удаления - если удалена, возвращаем 410 Gone
+	if url.DeletedFlag {
+		return models.ShortenedLink{}, models.ErrGone
+	}
+
 	return url, nil
 }
 
-// GetShortURL возвращает полный короткий URL
+// GetShortURL возвращает полный короткий URL это как раз здесь :8080/ добавляется
 func (s *URLShortener) GetShortURL(shortKey string) string {
 	return fmt.Sprintf("%s/%s", s.baseURL, shortKey)
 }
 
 // SetURL создает новую короткую ссылку или возвращает существующую
 func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (models.ShortenedLink, error) {
-	// Проверка обязательных полей
-	if model.OriginalURL == "" {
+	if model.OriginalURL == "" || model.UserID <= 0 {
 		return models.ShortenedLink{}, models.ErrInvalidData
 	}
 
-	if model.UserID <= 0 {
-		return models.ShortenedLink{}, models.ErrInvalidData
-	}
-
-	// Генерируем уникальный токен
 	token, err := s.generateUniqueToken(ctx)
 	if err != nil {
 		return models.ShortenedLink{}, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	// Создаем новую запись
 	newURL := models.ShortenedLink{
 		OriginalURL: model.OriginalURL,
 		ShortCode:   token,
@@ -99,11 +102,9 @@ func (s *URLShortener) SetURL(ctx context.Context, model models.ShortenedLink) (
 		CreatedAt:   time.Now().UTC(),
 	}
 
-	// Пытаемся создать запись - хранилище само вернет конфликт если URL уже существует
 	result, err := s.storage.ShortenedLinkCreate(ctx, newURL)
 	if err != nil {
 		if errors.Is(err, models.ErrConflict) {
-			// Возвращаем существующий URL и ошибку конфликта
 			return result, models.ErrConflict
 		}
 		return models.ShortenedLink{}, fmt.Errorf("failed to create URL: %w", err)
@@ -118,7 +119,6 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 		return nil, models.ErrInvalidData
 	}
 
-	// Проверяем существующие URL
 	longUrls := make([]string, len(urls))
 	for i, url := range urls {
 		longUrls[i] = url.OriginalURL
@@ -140,12 +140,10 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 		allExist     = true
 	)
 
-	// Формируем результат для существующих URL
 	for _, url := range urls {
 		if existingURL, exists := existingMap[url.OriginalURL]; exists {
 			result = append(result, existingURL)
 		} else {
-			// Генерируем короткий ключ для новых URL
 			token, err := s.generateUniqueToken(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate token: %w", err)
@@ -157,18 +155,114 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 		}
 	}
 
-	// Если все URL уже существуют, возвращаем конфликт
 	if allExist {
 		return result, models.ErrConflict
 	}
 
-	// Создаем новые URL
 	createdURLs, err := s.storage.ShortenedLinkBatchCreate(ctx, urlsToCreate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create URLs: %w", err)
 	}
 
 	return append(result, createdURLs...), nil
+}
+
+func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []string) {
+	const (
+		numOfRetry   = 5
+		numOfWorkers = 4
+		batchSize    = 64
+		batchTimeout = 10 * time.Second
+	)
+
+	statusCh := make(chan error, numOfWorkers)
+	batchDataCh := make(chan []string, numOfWorkers)
+	wgWorkers := sync.WaitGroup{}
+
+	mainCtx, _ := context.WithCancel(context.Background())
+
+	for i := 0; i < numOfWorkers; i++ {
+		wgWorkers.Add(1)
+		go func(workerID int) {
+			defer wgWorkers.Done()
+			for {
+				select {
+				case val, ok := <-batchDataCh:
+					if !ok {
+						return
+					}
+
+					batchCtx, batchCancel := context.WithTimeout(mainCtx, batchTimeout)
+
+					var err error
+					for retry := 0; retry < numOfRetry; retry++ {
+						err = s.storage.ShortenedLinkBatchDelete(batchCtx, id, val)
+						if err == nil {
+							break
+						}
+						time.Sleep(100 * time.Millisecond)
+					}
+					batchCancel()
+
+					select {
+					case statusCh <- err:
+					case <-mainCtx.Done():
+						return
+					}
+				case <-mainCtx.Done():
+					return
+				}
+			}
+		}(i)
+	}
+
+	go func() {
+		defer close(batchDataCh)
+		for i := 0; i < len(shortCode); i += batchSize {
+			end := i + batchSize
+			if end > len(shortCode) {
+				end = len(shortCode)
+			}
+
+			prepareBatch := shortCode[i:end]
+
+			select {
+			case batchDataCh <- prepareBatch:
+			case <-mainCtx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer close(statusCh)
+		wgWorkers.Wait()
+	}()
+
+	go func() {
+		/*
+			по идее здесь просто логгируем все возникшие ошибки,
+			пока что у меня логгер лишь на уровне middleware
+		*/
+		for {
+			select {
+			case val, ok := <-statusCh:
+				if !ok {
+					return
+				}
+				if val != nil {
+					/*
+						log.
+						Error().
+						Err(val).
+						Msg("Failed to delete batchData")
+					*/
+				}
+			case <-mainCtx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // PingDataBase проверяет соединение с хранилищем

@@ -16,8 +16,11 @@ type InmemoryStorage struct {
 
 	// Дополнительные индексы(пока что почти такие же как и в Postgres)
 	originalURLIndex map[string]string
-	createdAtIndex   map[string][]string
 	userURLsIndex    map[int64][]string
+	urlsIsDeleted    map[string]bool
+
+	createdAtIndex map[string][]string
+	deletedAtIndex map[string][]string
 
 	lastURLID  int64
 	lastUserID int64
@@ -29,7 +32,9 @@ func NewStorage() *InmemoryStorage {
 		users:            make(map[int64]dto.UserDB),
 		originalURLIndex: make(map[string]string),
 		createdAtIndex:   make(map[string][]string),
+		deletedAtIndex:   make(map[string][]string),
 		userURLsIndex:    make(map[int64][]string),
+		urlsIsDeleted:    make(map[string]bool),
 		lastURLID:        0,
 		lastUserID:       0,
 	}
@@ -94,6 +99,7 @@ func (m *InmemoryStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 
 	return dto.ShortenedLinkDBToDomain(urlDB), nil
 }
+
 func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortKey string) (models.ShortenedLink, error) {
 	if err := ctx.Err(); err != nil {
 		return models.ShortenedLink{}, models.ErrInvalidData
@@ -110,6 +116,12 @@ func (m *InmemoryStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	if !exists {
 		return models.ShortenedLink{}, models.ErrUnfound
 	}
+
+	// Проверяем, не удален ли URL
+	if url.DeletedFlag {
+		return models.ShortenedLink{}, models.ErrGone
+	}
+
 	return dto.ShortenedLinkDBToDomain(url), nil
 }
 
@@ -239,7 +251,7 @@ func (m *InmemoryStorage) ShortenedLinkGetBatchByUser(ctx context.Context, userI
 
 	result := make([]models.ShortenedLink, 0, len(shortKeys))
 	for _, shortKey := range shortKeys {
-		if url, exists := m.data[shortKey]; exists {
+		if url, exists := m.data[shortKey]; exists && !url.DeletedFlag {
 			result = append(result, dto.ShortenedLinkDBToDomain(url))
 		}
 	}
@@ -289,51 +301,49 @@ func (m *InmemoryStorage) List(ctx context.Context, limit, offset int) ([]models
 	return allURLs[start:end], nil
 }
 
-func (m *InmemoryStorage) Delete(ctx context.Context, shortKey string) error {
+func (m *InmemoryStorage) ShortenedLinkBatchDelete(ctx context.Context, id int64, shortCodes []string) error {
 	if err := ctx.Err(); err != nil {
 		return models.ErrInvalidData
 	}
 
-	if shortKey == "" {
+	if id <= 0 || len(shortCodes) == 0 {
 		return models.ErrInvalidData
 	}
 
 	m.rwmu.Lock()
 	defer m.rwmu.Unlock()
 
-	url, exists := m.data[shortKey]
-	if !exists {
-		return models.ErrUnfound
-	}
+	deletedAt := time.Now().UTC()
 
-	// Удаляем из всех индексов
-	delete(m.data, shortKey)
-	delete(m.originalURLIndex, url.OriginalURL)
+	for _, shortCode := range shortCodes {
+		if shortCode == "" {
+			continue
+		}
 
-	dateKey := url.CreatedAt.Format("2006-01-02")
-	if keys, exists := m.createdAtIndex[dateKey]; exists {
-		for i, key := range keys {
-			if key == shortKey {
-				// Простое удаление элемента (меняем порядок, но это ок)
-				m.createdAtIndex[dateKey] = append(keys[:i], keys[i+1:]...)
-				break
-			}
+		// Находим URL по короткому коду
+		url, exists := m.data[shortCode]
+		if !exists {
+			continue // Пропускаем несуществующие URL
 		}
-		if len(m.createdAtIndex[dateKey]) == 0 {
-			delete(m.createdAtIndex, dateKey)
-		}
-	}
 
-	if keys, exists := m.userURLsIndex[url.UserID]; exists {
-		for i, key := range keys {
-			if key == shortKey {
-				m.userURLsIndex[url.UserID] = append(keys[:i], keys[i+1:]...)
-				break
-			}
+		// Проверяем, что URL принадлежит пользователю и не удален
+		if url.UserID != id || url.DeletedFlag {
+			continue
 		}
-		if len(m.userURLsIndex[url.UserID]) == 0 {
-			delete(m.userURLsIndex, url.UserID)
-		}
+
+		// Обновляем флаг удаления и время удаления
+		url.DeletedFlag = true
+		url.DeletedAt = deletedAt
+
+		// Обновляем запись в хранилище
+		m.data[shortCode] = url
+
+		// Добавляем в индекс удаленных URL
+		deletedDateKey := deletedAt.Format("2006-01-02")
+		m.deletedAtIndex[deletedDateKey] = append(m.deletedAtIndex[deletedDateKey], shortCode)
+
+		// Обновляем флаг в отдельном индексе для быстрой проверки
+		m.urlsIsDeleted[shortCode] = true
 	}
 
 	return nil

@@ -142,10 +142,11 @@ func (p *PostgresStorage) ShortenedLinkGetBatchByUser(ctx context.Context, id in
 		return nil, fmt.Errorf("failed to get querier: %w", err)
 	}
 
+	// Для списка пользователя возвращаем только НЕудаленные ссылки
 	rows, err := querier.QueryContext(ctx,
-		`SELECT id, short_key, original_url, user_id, created_at 
+		`SELECT id, short_key, original_url, user_id, is_deleted, created_at 
          FROM urls 
-         WHERE user_id = $1 
+         WHERE user_id = $1 AND is_deleted = false
          ORDER BY created_at`, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user links: %w", err)
@@ -177,7 +178,7 @@ func (p *PostgresStorage) ShortenedLinkCreate(ctx context.Context, url models.Sh
 		// Конфликт - запись уже существует, возвращаем существующую
 		var existing dto.ShortenedLinkDB
 		err := querier.QueryRowContext(ctx,
-			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+			"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1 AND is_deleted = false",
 			url.OriginalURL,
 		).Scan(&existing.ID, &existing.ShortCode, &existing.OriginalURL, &existing.UserID, &existing.CreatedAt)
 
@@ -206,10 +207,11 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 		return models.ShortenedLink{}, fmt.Errorf("failed to get querier: %w", err)
 	}
 
+	// ВАЖНО: получаем ВСЕ записи (включая удаленные), чтобы можно было проверить флаг is_deleted
 	err = querier.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE short_key = $1",
+		"SELECT id, short_key, original_url, user_id, is_deleted, created_at FROM urls WHERE short_key = $1",
 		shortKey,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.DeletedFlag, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -221,6 +223,7 @@ func (p *PostgresStorage) ShortenedLinkGetByShortKey(ctx context.Context, shortK
 	return dto.ShortenedLinkDBToDomain(result), nil
 }
 
+// В ShortenedLinkGetByOriginalURL также убираем проверку is_deleted
 func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, originalURL string) (models.ShortenedLink, error) {
 	if originalURL == "" {
 		return models.ShortenedLink{}, models.ErrInvalidData
@@ -233,10 +236,11 @@ func (p *PostgresStorage) ShortenedLinkGetByOriginalURL(ctx context.Context, ori
 		return models.ShortenedLink{}, fmt.Errorf("failed to get querier: %w", err)
 	}
 
+	// Для поиска по оригинальному URL тоже получаем все записи
 	err = querier.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+		"SELECT id, short_key, original_url, user_id, is_deleted, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.CreatedAt)
+	).Scan(&result.ID, &result.ShortCode, &result.OriginalURL, &result.UserID, &result.DeletedFlag, &result.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -274,7 +278,7 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 			if errors.Is(err, sql.ErrNoRows) {
 				var existing dto.ShortenedLinkDB
 				err := querier.QueryRowContext(txCtx,
-					"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+					"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1 AND is_deleted = false",
 					url.OriginalURL,
 				).Scan(&existing.ID, &existing.ShortCode, &existing.OriginalURL, &existing.UserID, &existing.CreatedAt)
 
@@ -301,36 +305,6 @@ func (p *PostgresStorage) ShortenedLinkBatchCreate(ctx context.Context, urls []m
 	return result, nil
 }
 
-func (p *PostgresStorage) Delete(ctx context.Context, shortKey string) error {
-	if shortKey == "" {
-		return models.ErrInvalidData
-	}
-
-	querier, err := p.GetQuerier(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get querier: %w", err)
-	}
-
-	result, err := querier.ExecContext(ctx,
-		"DELETE FROM urls WHERE short_key = $1",
-		shortKey,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete URL: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return models.ErrUnfound
-	}
-
-	return nil
-}
-
 // List остается без изменений
 func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models.ShortenedLink, error) {
 	if limit <= 0 || offset < 0 {
@@ -343,7 +317,7 @@ func (p *PostgresStorage) List(ctx context.Context, limit, offset int) ([]models
 	}
 
 	rows, err := querier.QueryContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE is_deleted = false ORDER BY created_at DESC LIMIT $1 OFFSET $2",
 		limit, offset,
 	)
 	if err != nil {
@@ -363,9 +337,9 @@ func (p *PostgresStorage) Exists(ctx context.Context, originalURL string) (model
 	}
 
 	err = querier.QueryRowContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = $1",
+		"SELECT id, short_key, original_url, user_id, is_deleted, created_at FROM urls WHERE original_url = $1",
 		originalURL,
-	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt)
+	).Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.DeletedFlag, &dbURL.CreatedAt)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -387,8 +361,9 @@ func (p *PostgresStorage) ShortenedLinkBatchExists(ctx context.Context, original
 		return nil, fmt.Errorf("failed to get querier: %w", err)
 	}
 
+	// Для проверки существования проверяем только активные ссылки
 	rows, err := querier.QueryContext(ctx,
-		"SELECT id, short_key, original_url, user_id, created_at FROM urls WHERE original_url = ANY($1)",
+		"SELECT id, short_key, original_url, user_id, is_deleted, created_at FROM urls WHERE original_url = ANY($1) AND is_deleted = false",
 		originalURLs,
 	)
 	if err != nil {
@@ -403,7 +378,7 @@ func (p *PostgresStorage) ShortenedLinkBatchExists(ctx context.Context, original
 		}
 
 		var dbURL dto.ShortenedLinkDB
-		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.CreatedAt); err != nil {
+		if err := rows.Scan(&dbURL.ID, &dbURL.ShortCode, &dbURL.OriginalURL, &dbURL.UserID, &dbURL.DeletedFlag, &dbURL.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
 		result = append(result, dto.ShortenedLinkDBToDomain(dbURL))
@@ -442,6 +417,7 @@ func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([
 			&linkDB.ShortCode,
 			&linkDB.OriginalURL,
 			&linkDB.UserID,
+			&linkDB.DeletedFlag,
 			&linkDB.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan link: %w", err)
@@ -454,4 +430,28 @@ func (p *PostgresStorage) scanShortLinks(ctx context.Context, rows *sql.Rows) ([
 	}
 
 	return shortLinks, nil
+}
+
+func (p *PostgresStorage) ShortenedLinkBatchDelete(ctx context.Context, id int64, shortCode []string) error {
+	if id <= 0 || len(shortCode) == 0 {
+		return models.ErrInvalidData
+	}
+
+	querier, err := p.GetQuerier(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get querier: %w", err)
+	}
+
+	query := "UPDATE urls SET is_deleted = true, deleted_at = $1 WHERE user_id = $2 AND short_key = ANY($3::text[]) AND is_deleted = false"
+	result, err := querier.ExecContext(ctx, query, time.Now().UTC(), id, shortCode)
+	if err != nil {
+		return fmt.Errorf("failed to batch delete URLs: %w", err)
+	}
+
+	_, err = result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return nil
 }
