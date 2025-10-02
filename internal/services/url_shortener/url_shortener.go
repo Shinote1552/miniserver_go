@@ -168,50 +168,52 @@ func (s *URLShortener) BatchCreate(ctx context.Context, urls []models.ShortenedL
 }
 
 func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []string) {
-	/*
-		Пока что константы выдуманы лишь для примера
-	*/
 	const (
 		numOfRetry   = 5
 		numOfWorkers = 4
 		batchSize    = 64
+		batchTimeout = 10 * time.Second
 	)
 
-	statusCh := make(chan error)
-	batchDataCh := make(chan []string)
+	statusCh := make(chan error, numOfWorkers)
+	batchDataCh := make(chan []string, numOfWorkers)
 	wgWorkers := sync.WaitGroup{}
+
+	mainCtx, _ := context.WithCancel(context.Background())
 
 	for i := 0; i < numOfWorkers; i++ {
 		wgWorkers.Add(1)
-		go func() {
+		go func(workerID int) {
 			defer wgWorkers.Done()
-			func() {
-				for {
-					select {
-					case val, ok := <-batchDataCh:
-						if !ok {
-							return
-						}
-
-						var err error
-						for i := 0; i < numOfRetry; i++ {
-							err = s.storage.ShortenedLinkBatchDelete(ctx, id, val)
-							if err == nil {
-								break
-							}
-						}
-						select {
-						case statusCh <- err:
-						case <-ctx.Done():
-							return
-						}
-					case <-ctx.Done():
+			for {
+				select {
+				case val, ok := <-batchDataCh:
+					if !ok {
 						return
 					}
-				}
 
-			}()
-		}()
+					batchCtx, batchCancel := context.WithTimeout(mainCtx, batchTimeout)
+
+					var err error
+					for retry := 0; retry < numOfRetry; retry++ {
+						err = s.storage.ShortenedLinkBatchDelete(batchCtx, id, val)
+						if err == nil {
+							break
+						}
+						time.Sleep(100 * time.Millisecond)
+					}
+					batchCancel()
+
+					select {
+					case statusCh <- err:
+					case <-mainCtx.Done():
+						return
+					}
+				case <-mainCtx.Done():
+					return
+				}
+			}
+		}(i)
 	}
 
 	go func() {
@@ -223,11 +225,12 @@ func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []st
 			}
 
 			prepareBatch := shortCode[i:end]
-			/*
-				or we can use min():
-					prepareBatch := shortCode[i:min(i + batchSize, len(shortCode))]
-			*/
-			batchDataCh <- prepareBatch
+
+			select {
+			case batchDataCh <- prepareBatch:
+			case <-mainCtx.Done():
+				return
+			}
 		}
 	}()
 
@@ -255,7 +258,7 @@ func (s *URLShortener) BatchDelete(ctx context.Context, id int64, shortCode []st
 						Msg("Failed to delete batchData")
 					*/
 				}
-			case <-ctx.Done():
+			case <-mainCtx.Done():
 				return
 			}
 		}
